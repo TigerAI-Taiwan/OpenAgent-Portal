@@ -1,0 +1,45 @@
+// SPDX-License-Identifier: LicenseRef-TigerAI-SUL-Draft
+// Texts of the 精靈 (tigerai/wizards): channel cards, the per-channel settings, the 公佈欄 items. Kept apart from i18n.ts so a parallel
+// change to that file does not collide with this one; i18n.ts spreads both objects into its tables.
+export const zhWiz = {
+  wizSettings: "精靈設定", wizLabel: "精靈", wizTitle: "{room} 的精靈", wizIntro: "精靈只寫草稿與建議,不會自己做決定;確認、採用都由你按。每一則都附出處,沒有出處的不會出現。",
+  wizDaily: "每日摘要", wizWeekly: "週報", wizSkill: "SKILL 建議",
+  wizDailyDesc: "每天讀頻道的新訊息,在頻道貼一則摘要草稿;沒有新訊息就不跑。", wizWeeklyDesc: "每週讀這週的每日摘要和交辦單,在頻道貼一則週報草稿。",
+  wizSkillDesc: "每週找出重複在做、步驟固定的事(至少三次),建議成技能;只送給管理員核准,不貼頻道。",
+  wizTime: "時間", wizWeekday: "星期", wizRunNow: "立即執行", wizRunning: "執行中…", wizRunQueued: "已開始,結果會出現在頻道裡。",
+  wizDay1: "週一", wizDay2: "週二", wizDay3: "週三", wizDay4: "週四", wizDay5: "週五", wizDay6: "週六", wizDay7: "週日",
+  wizAspects: "AI 的五個面向", wizAspectsHelp: "記錄、建議預設開;監督、稽核、提醒預設關,要由主管或管理員打開。",
+  wizAspRecord: "記錄", wizAspSuggest: "建議", wizAspSupervise: "監督", wizAspAudit: "稽核", wizAspRemind: "提醒",
+  wizAspRecordDesc: "發生了什麼事、做了什麼決定:貼回頻道(草稿)",
+  wizAspSuggestDesc: "下一步怎麼做、哪裡可以交給 AI:附「採用 / 不需要」",
+  wizAspSuperviseDesc: "答應了沒做到、沒人負責、問了沒人回:只給主管與頻道建立者,不貼頻道",
+  wizAspAuditDesc: "該留紀錄卻沒有、數字日期前後不一致:只給主管與頻道建立者",
+  wizAspRemindDesc: "某人欠的事、快到期的事:只給欠事的人本人",
+  wizRecent: "最近的執行", wizNoRuns: "還沒有執行過。",
+  wizSt_running: "執行中", wizSt_done: "完成", wizSt_failed: "沒有完成", wizSt_skipped: "沒有東西可整理",
+  wizTrig_schedule: "排程", wizTrig_manual: "手動",
+  wizCardDraft: "AI 草稿,待確認", wizCardConfirmed: "已由 {name} 確認", wizCardFailed: "這次整理沒有完成",
+  wizConfirm: "確認", wizRerun: "重跑", wizAdopt: "採用", wizDismiss: "不需要", wizAdopted: "已採用", wizDismissed: "已略過", wizSources: "出處",
+  wizOpenSource: "回到這則訊息", wizAck: "我知道了", wizPrivate: "私下的結果,只有你看得到", wizFromRoom: "頻道:{room}", wizNothing: "這次沒有可以貼在頻道的記錄。",
+  wizSkillWhen: "什麼時候用", wizSkillSteps: "步驟", wizSkillAdoptedAs: "已寫成技能「{name}」,可以在「技能」看到。", wizSkillNote: "AI 提議的技能,管理員按「採用」才會上架。",
+  wizTickBuiltinNever: "內建排程還沒有檢查過,精靈暫時不會自動執行。", wizTickBuiltin: "精靈由系統內建排程自動執行(每 5 分鐘檢查一次),上次檢查:{ago}", wizTickBuiltinStale: "內建排程超過 20 分鐘沒有檢查,精靈不會自動執行。請洽管理員確認伺服器設定。",
+  wizTickExternal: "精靈排程由外部排程控制,上次收到:{ago}", wizTickExternalStale: "超過 1 小時沒有收到外部排程,精靈不會自動執行(內建排程會自動接手)。",
+  wizAgoNow: "剛剛", wizAgoMin: "{n} 分鐘前", wizAgoHour: "{n} 小時前", wizAgoDay: "{n} 天前",
+  wizOnlyManagers: "只有頻道建立者、部門主管和管理員能改精靈設定。",
+  bKindWizard: "精靈", bKindSkill: "待我核准的技能",
+} as const;
+
+export const enWiz: Partial<Record<keyof typeof zhWiz, string>> = {
+  wizSettings: "Wizards", wizLabel: "Wizard", wizTitle: "Wizards of {room}", wizIntro: "Wizards only write drafts and suggestions; confirming and adopting is yours. Every item cites its sources, and one without sources is never shown.",
+  wizDaily: "Daily summary", wizWeekly: "Weekly report", wizSkill: "Skill suggestions", wizTime: "Time", wizWeekday: "Weekday", wizRunNow: "Run now", wizRunning: "Running…",
+  wizRunQueued: "Started; the result appears in the channel.", wizDay1: "Mon", wizDay2: "Tue", wizDay3: "Wed", wizDay4: "Thu", wizDay5: "Fri", wizDay6: "Sat", wizDay7: "Sun",
+  wizAspects: "The five aspects", wizAspRecord: "Record", wizAspSuggest: "Suggest", wizAspSupervise: "Supervise", wizAspAudit: "Audit", wizAspRemind: "Remind",
+  wizRecent: "Recent runs", wizNoRuns: "No runs yet.", wizSt_running: "Running", wizSt_done: "Done", wizSt_failed: "Failed", wizSt_skipped: "Nothing to summarise",
+  wizTrig_schedule: "schedule", wizTrig_manual: "manual", wizCardDraft: "AI draft, to be confirmed", wizCardConfirmed: "Confirmed by {name}", wizCardFailed: "This run did not finish",
+  wizConfirm: "Confirm", wizRerun: "Run again", wizAdopt: "Adopt", wizDismiss: "Not needed", wizAdopted: "Adopted", wizDismissed: "Dismissed", wizSources: "Sources",
+  wizAck: "Got it", wizPrivate: "A private result, only you see it", wizFromRoom: "Channel: {room}", wizSkillWhen: "When to use", wizSkillSteps: "Steps",
+  wizTickBuiltinNever: "The built-in schedule has not checked yet; wizards will not run by themselves for now.", wizTickBuiltin: "Wizards run from the built-in schedule (checked every 5 minutes), last check: {ago}", wizTickBuiltinStale: "The built-in schedule has not checked for over 20 minutes; wizards will not run by themselves. Ask your administrator to check the server.",
+  wizTickExternal: "The wizard schedule is driven from outside; last call: {ago}", wizTickExternalStale: "No external schedule call for over an hour; wizards are not running from it (the built-in schedule takes over by itself).",
+  wizAgoNow: "just now", wizAgoMin: "{n} min ago", wizAgoHour: "{n} h ago", wizAgoDay: "{n} d ago",
+  bKindWizard: "Wizard", bKindSkill: "Skill awaiting approval",
+};

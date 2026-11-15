@@ -1,0 +1,53 @@
+TigerAI Sustainable Use License (DRAFT - pending legal review / 草稿,待法律審閱)
+================================================================
+
+STATUS: draft text for discussion. It has not been reviewed by a lawyer and must
+not be treated as final. It is written to have the same intent as the
+"Sustainable Use License" used by n8n (modelled on that idea: free to use and
+modify, including inside a company, but not to resell or offer as a hosted
+service); the wording below is our own, not a copy.
+
+This licence covers the files under the directory `tigerai/` and the small
+`TG-HOOK` call sites this project adds to otherwise unmodified upstream files
+(those upstream files stay under the upstream MIT licence, see /LICENSE).
+
+1. Grant
+   Subject to these terms, the licensor grants you a non-exclusive,
+   non-transferable, royalty-free licence to use, copy, modify and run the
+   software, and to share it with others, for your own internal business
+   purposes or for personal and non-commercial purposes.
+
+2. What you may not do
+   a. Sell, resell, sublicense or otherwise make the software, or a modified
+      version of it, available to third parties for a fee or other consideration.
+   b. Offer the software, or a modified version of it, to third parties as a
+      hosted, managed or software-as-a-service product, or as a substantial
+      part of one, where the value of that product comes from the software.
+   c. Remove or hide licence, copyright or attribution notices.
+   d. Use the names "TigerAI" or "OpenAgent Portal", or the logo, other than
+      to truthfully say that something is based on or compatible with the
+      software. No trademark right is granted (see TRADEMARK.md).
+
+3. Sharing
+   You may pass copies on free of charge, for non-commercial purposes only, and
+   only together with this licence.
+
+4. Enterprise files
+   Files and directories whose name contains ".ee" (for example `*.ee.ts` or a
+   directory named `ee/`) are NOT covered by this licence. They are under the
+   separate TigerAI Enterprise licence and need a valid subscription to use in
+   production. This repository contains none of them; see LICENSE_EE.md.
+
+5. Contributions
+   Contributions are accepted under the contributor's sign-off of the Developer
+   Certificate of Origin (a "Signed-off-by" line) and are licensed under this
+   licence. (Open question for the founder: DCO or a CLA; see docs/DECISIONS.md.)
+
+6. No warranty and no liability
+   The software is provided "as is", without warranty of any kind. To the extent
+   permitted by law the licensor is not liable for any damages arising from its
+   use.
+
+7. Termination
+   Your rights end automatically if you breach these terms, and return if you
+   stop and cure the breach within 30 days of becoming aware of it.

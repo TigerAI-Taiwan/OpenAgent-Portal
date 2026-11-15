@@ -1,0 +1,31 @@
+OpenAgent Portal
+================
+
+OpenAgent Portal is based on pi-agent and pi-web.
+
+This project is NOT an official release of either upstream project, and the upstream
+authors do not endorse it. It adds, around their code, the files under `tigerai/` and a
+small number of marked call sites (`TG-HOOK`) in otherwise unmodified upstream files.
+
+Upstream projects
+-----------------
+
+1. pi-web
+   https://github.com/agegr/pi-web
+   License: MIT. Copyright (c) 2026 agegr. The full text is in the file LICENSE at the
+   root of this repository.
+
+2. pi-agent (the pi coding agent; npm packages @earendil-works/pi-coding-agent,
+   @earendil-works/pi-agent-core, @earendil-works/pi-ai and related)
+   https://github.com/earendil-works/pi
+   License: MIT. Copyright is held by its authors; the licence text ships with the
+   packages and is in the project's repository.
+
+Other dependencies keep their own licences (see package.json and package-lock.json).
+
+Our own additions
+-----------------
+
+The directory `tigerai/` is under the TigerAI Sustainable Use License, which is a DRAFT
+pending legal review (tigerai/LICENSE). The TigerAI name and logo are not licensed
+(tigerai/TRADEMARK.md). Editions: EDITIONS.md.

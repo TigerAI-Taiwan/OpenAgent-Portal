@@ -1,0 +1,227 @@
+{
+  "_doc": "Every place an upstream file calls into tigerai/adapter. id = the TG-HOOK marker; anchor = text that must still appear within 10 lines of a marker; expectCount = number of marker lines for that id in that file.",
+  "hooks": [
+    {
+      "id": "H01",
+      "file": "instrumentation-node.ts",
+      "anchor": "registerNodeInstrumentation",
+      "expectCount": 1
+    },
+    {
+      "id": "H02",
+      "file": "proxy.ts",
+      "anchor": "isApiRequestAllowed",
+      "expectCount": 1
+    },
+    {
+      "id": "H03",
+      "file": "app/api/sessions/route.ts",
+      "anchor": "withSubagentDisplayStatus",
+      "expectCount": 4
+    },
+    {
+      "id": "H04",
+      "file": "app/api/sessions/search/route.ts",
+      "anchor": "listAllSessions",
+      "expectCount": 1
+    },
+    {
+      "id": "H05",
+      "file": "app/api/sessions/stats/route.ts",
+      "anchor": "MAX_SESSION_STATS_IDS",
+      "expectCount": 1
+    },
+    {
+      "id": "H05",
+      "file": "app/api/sessions/ui-state/route.ts",
+      "anchor": "readSessionUiState",
+      "expectCount": 2
+    },
+    {
+      "id": "H05",
+      "file": "app/api/agent/running/route.ts",
+      "anchor": "getRunningRpcSessionIds",
+      "expectCount": 4
+    },
+    {
+      "id": "H13",
+      "file": "app/api/agent/[id]/route.ts",
+      "anchor": "commandType",
+      "expectCount": 1
+    },
+    {
+      "id": "H06",
+      "file": "app/api/agent/new/route.ts",
+      "anchor": "startRpcSession",
+      "expectCount": 5
+    },
+    {
+      "id": "H07",
+      "file": "app/api/sessions/[id]/fork/route.ts",
+      "anchor": "forkSessionBranch",
+      "expectCount": 1
+    },
+    {
+      "id": "H08",
+      "file": "lib/rpc-manager.ts",
+      "anchor": "createAgentSessionFromServices",
+      "expectCount": 3
+    },
+    {
+      "id": "H09",
+      "file": "app/api/files/[...path]/route.ts",
+      "anchor": "hasParentDirectorySegment",
+      "expectCount": 1
+    },
+    {
+      "id": "H10",
+      "file": "app/api/cwd/validate/route.ts",
+      "anchor": "allowFileRoot",
+      "expectCount": 1
+    },
+    {
+      "id": "H10",
+      "file": "app/api/cwd/browse/route.ts",
+      "anchor": "resolveDirectory",
+      "expectCount": 1
+    },
+    {
+      "id": "H11",
+      "file": "components/SessionSidebar.tsx",
+      "anchor": "SidebarMenu",
+      "expectCount": 1
+    },
+    {
+      "id": "H12",
+      "file": "app/tg/[[...slug]]/page.tsx",
+      "anchor": "TgApp",
+      "expectCount": 1
+    },
+    {
+      "id": "H12",
+      "file": "app/api/tg/[...path]/route.ts",
+      "anchor": "tigerai/api/router",
+      "expectCount": 1
+    },
+    {
+      "id": "H12",
+      "file": "app/api/tigerai/hooks/agent/route.ts",
+      "anchor": "tigerai/n8n/inbound",
+      "expectCount": 1
+    },
+    {
+      "id": "H12",
+      "file": "app/api/tigerai/hooks/wizards/tick/route.ts",
+      "anchor": "tigerai/addons/hook-wizards-tick",
+      "expectCount": 1
+    },
+    {
+      "id": "H14",
+      "file": "components/ChatWindow.tsx",
+      "anchor": "TgSlot",
+      "expectCount": 1
+    },
+    {
+      "id": "H15",
+      "file": "components/ChatWindow.tsx",
+      "anchor": "chatInputElement",
+      "expectCount": 1
+    },
+    {
+      "id": "H16",
+      "file": "components/ChatInput.tsx",
+      "anchor": "useTg",
+      "expectCount": 5
+    },
+    {
+      "id": "H17",
+      "file": "components/ChatInput.tsx",
+      "anchor": "composer.functions",
+      "expectCount": 1
+    },
+    {
+      "id": "H18",
+      "file": "components/SessionSidebar.tsx",
+      "anchor": "sidebar-new-button",
+      "expectCount": 1
+    },
+    {
+      "id": "H19",
+      "file": "components/SessionSidebar.tsx",
+      "anchor": "sidebar-search",
+      "expectCount": 1
+    },
+    {
+      "id": "H20",
+      "file": "components/AppShell.tsx",
+      "anchor": "Chat content",
+      "expectCount": 1
+    },
+    {
+      "id": "H21",
+      "file": "components/AppShell.tsx",
+      "anchor": "renderSessionStatsButton",
+      "expectCount": 2
+    },
+    {
+      "id": "H22",
+      "file": "components/AppShell.tsx",
+      "anchor": "common.models",
+      "expectCount": 1
+    },
+    {
+      "id": "H23",
+      "file": "components/AppShell.tsx",
+      "anchor": "workspace.addModels",
+      "expectCount": 1
+    },
+    {
+      "id": "H24",
+      "file": "components/SessionSidebar.tsx",
+      "anchor": "useTg().homeCwd",
+      "expectCount": 3
+    },
+    {
+      "id": "H25",
+      "file": "components/AppShell.tsx",
+      "anchor": "name=\"toolbar.tabs\"",
+      "expectCount": 3
+    },
+    {
+      "id": "H26",
+      "file": "components/SessionSidebar.tsx",
+      "anchor": "brand.title",
+      "expectCount": 1
+    },
+    {
+      "id": "H27",
+      "file": "components/MessageView.tsx",
+      "anchor": "chat.truncation",
+      "expectCount": 1
+    },
+    {
+      "id": "H28",
+      "file": "components/ChatWindow.tsx",
+      "anchor": "chat.sender",
+      "expectCount": 1
+    },
+    {
+      "id": "H29",
+      "file": "components/MessageView.tsx",
+      "anchor": "onCompact()",
+      "expectCount": 1
+    }
+  ],
+  "matcher": {
+    "file": "proxy.ts",
+    "mustInclude": "/tg/:path*"
+  },
+  "startRpcSessionCallers": {
+    "grep": "startRpcSession(",
+    "dirs": [
+      "app",
+      "lib"
+    ],
+    "recorded": 14
+  }
+}

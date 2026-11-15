@@ -1,0 +1,66 @@
+/* TigerAI pages: only upstream CSS variables, no hard-coded colours. */
+.tg-shell { display: flex; height: 100dvh; background: var(--bg); color: var(--text); font-size: 14px; }
+.tg-side { width: 260px; flex: none; background: var(--bg-panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; }
+.tg-side h1 { font-size: 14px; margin: 0; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.tg-side .tg-list { flex: 1; overflow: auto; padding: 6px; }
+.tg-item { display: flex; justify-content: space-between; gap: 8px; align-items: center; width: 100%; text-align: left; padding: 7px 10px; border: 0; border-radius: 6px; background: none; color: var(--text); cursor: pointer; font: inherit; }
+.tg-item:hover { background: var(--bg-hover); }
+.tg-item[aria-current="true"] { background: var(--bg-selected); }
+.tg-badge { background: var(--accent); color: var(--bg); border-radius: 10px; padding: 0 7px; font-size: 11px; line-height: 17px; }
+.tg-foot { border-top: 1px solid var(--border); padding: 8px; display: flex; flex-direction: column; gap: 2px; }
+.tg-main { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+.tg-head { padding: 10px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.tg-body { flex: 1; overflow: auto; padding: 16px; min-height: 0; }
+.tg-card { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 14px; max-width: 880px; }
+.tg-btn { border: 1px solid var(--border); background: var(--bg-panel); color: var(--text); border-radius: 6px; padding: 5px 12px; cursor: pointer; font: inherit; }
+.tg-btn:hover { background: var(--bg-hover); }
+.tg-btn.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+.tg-btn:disabled { opacity: .5; cursor: default; }
+.tg-input { border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 6px; padding: 6px 9px; font: inherit; }
+.tg-muted { color: var(--text-muted); }
+.tg-err { color: var(--text); border: 1px solid var(--border); background: var(--bg-hover); border-radius: 6px; padding: 6px 10px; margin: 8px 0; }
+.tg-table { border-collapse: collapse; width: 100%; }
+.tg-table th, .tg-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.tg-tabs { display: flex; gap: 4px; padding: 6px; }
+.tg-login { margin: 12vh auto 0; width: min(360px, calc(100vw - 32px)); }
+.tg-login form { display: flex; flex-direction: column; gap: 10px; }
+.tg-room { flex: 1; display: flex; min-height: 0; }
+.tg-chat { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+.tg-msgs { flex: 1; overflow: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+.tg-msg { max-width: 80%; border-radius: 8px; padding: 6px 10px; background: var(--tool-bg); white-space: pre-wrap; overflow-wrap: anywhere; }
+.tg-msg.mine { align-self: flex-end; background: var(--user-bg); }
+.tg-msg .meta { font-size: 11px; color: var(--text-muted); }
+.tg-msg mark { background: var(--bg-selected); color: var(--text); border-radius: 3px; padding: 0 2px; }
+.tg-compose { border-top: 1px solid var(--border); padding: 10px 12px; position: relative; display: flex; gap: 8px; align-items: flex-end; }
+.tg-compose textarea { flex: 1; resize: none; min-height: 40px; }
+.tg-pop { position: absolute; bottom: 100%; left: 12px; background: var(--bg-panel); border: 1px solid var(--border); border-radius: 6px; min-width: 160px; z-index: 5; }
+.tg-pop button { display: block; width: 100%; text-align: left; background: none; border: 0; color: var(--text); padding: 5px 10px; cursor: pointer; font: inherit; }
+.tg-pop button[aria-selected="true"] { background: var(--bg-selected); }
+.tg-ai { width: 46%; border-left: 1px solid var(--border); display: flex; flex-direction: column; min-width: 0; }
+.tg-ai iframe { flex: 1; border: 0; width: 100%; background: var(--bg); }
+@media (max-width: 760px) {
+  .tg-shell { flex-direction: column; }
+  .tg-side { width: auto; max-height: 38dvh; border-right: 0; border-bottom: 1px solid var(--border); }
+  .tg-room { flex-direction: column; }
+  .tg-ai { width: auto; border-left: 0; border-top: 1px solid var(--border); min-height: 40dvh; }
+}
+
+.tg-msg.ai { background: var(--bg-panel); border: 1px solid var(--border); }
+
+/* ---- TigerAI look for the new pages (uses the brand variables from app/tigerai-theme.css) ---- */
+.tg-shell { font-family: var(--font-ui-default, inherit); }
+.tg-brand { display: flex; align-items: center; gap: 12px; font-size: 20px; margin: 0 0 14px; }
+.tg-side h1 { font-weight: 600; }
+.tg-card { border-radius: 16px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06); }
+.tg-btn { border-radius: 999px; padding: 6px 16px; }
+.tg-btn.primary { background: var(--accent); color: var(--accent-contrast, var(--bg)); border-color: var(--accent); }
+.tg-btn.primary:hover:not(:disabled) { background: var(--accent-hover, var(--accent)); }
+.tg-input { border-radius: 12px; }
+.tg-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+.tg-badge { color: var(--accent-contrast, var(--bg)); }
+.tg-item { border-radius: 10px; }
+.tg-msg { border-radius: 16px; }
+.tg-msg.mine { background: var(--user-bg); }
+.tg-pop { border-radius: 12px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12); }
+.tg-compose textarea { border-radius: 20px; }
+.tg-btn,.tgx-btn{white-space:nowrap}
