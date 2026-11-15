@@ -7,11 +7,14 @@ import { useEffect, useRef, useState } from "react";
 import { Prompts, Roles, MyPrompts, WorkOrders } from "../pages/TgApp";
 import { tr } from "../pages/i18n";
 import { AgentBrowse } from "./AgentsModal";
+import DeptRoles from "./DeptRoles";
 import EmbeddedUpstream from "./EmbeddedUpstream";
 import { TabbedModal } from "./TabbedModal";
 import { api } from "./kit";
 import { SKILL_TABS, visibleItems } from "./layout";
 import { AddonTab, useAddonItems } from "./addons";
+import { N8nPublishForm } from "./N8nPublish";
+import { MineActions, SkillEditor, SkillReview } from "./MySkills";
 import { useMe } from "./me";
 import { startConversation } from "./start";
 import { closePanel, openPanel, useUi } from "./store";
@@ -41,18 +44,20 @@ function Body({ id }: { id: string }) {
     case "n8napps": return <N8nApps />;
     case "available": return <Installed />;
     case "roleAdmin": return <Roles />;
+    case "deptRoles": return <DeptRoles />;
     case "library": return <Prompts />;
     case "approvals": return <WorkOrders />;
   }
 }
 
-function UseRow({ name, description, onUse }: { name: string; description: string; onUse: () => void }) {
+function UseRow({ name, description, onUse, badge, extra }: { name: string; description: string; onUse: () => void; badge?: string; extra?: React.ReactNode }) {
   return (
     <div className="tgx-card" style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, padding: "10px 14px" }}>
       <span style={{ flex: 1, minWidth: 0 }}>
-        <strong style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</strong>
+        <strong style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}{badge && <span className="tgx-muted" style={{ marginLeft: 8, fontSize: 11, fontWeight: 400, border: "1px solid var(--border)", borderRadius: 8, padding: "1px 7px" }}>{badge}</span>}</strong>
         {description && <span className="tgx-muted" style={{ fontSize: 12, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{description}</span>}
       </span>
+      {extra}
       <button type="button" className="tgx-btn" onClick={onUse}>{tr("useThis")}</button>
     </div>
   );
@@ -71,6 +76,7 @@ function N8nApps() {
   const { rows, error } = useLoad("n8n/apps", (d) => d.apps as { id: string; kind: string; name: string; label?: string; description: string }[]);
   if (!rows) return <div className="tgx-muted">{error || tr("loading")}</div>;
   return (<>
+    <N8nPublishForm />
     <div className="tgx-muted" style={{ marginBottom: 10 }}>{tr("skN8nHint")}</div>
     {rows.length === 0 && <div className="tgx-muted">{tr("fnN8nEmpty")}</div>}
     {rows.map((a) => {
@@ -83,11 +89,27 @@ function N8nApps() {
 
 function Installed() {
   const { me } = useMe();
-  const { rows, error } = useLoad("skills", (d) => d.skills as { name: string; description: string }[]);
+  const [rows, setRows] = useState<{ name: string; title?: string; description: string; builtin?: boolean }[] | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState("");
+  const [msg, setMsg] = useState("");
+  const load = () => { void api<Record<string, unknown>>("skills").then((r) => { if (r.ok) setRows(r.data.skills as { name: string; title?: string; description: string; builtin?: boolean }[]); else setError(r.data.error ?? tr("loadFail")); }); };
+  useEffect(load, []);
+  const copy = async (name: string) => {
+    const r = await api<{ name?: string }>("skills/copy", "POST", { name });
+    if (r.ok) { setMsg(tr("skCopied", { name: r.data.name ?? "" })); load(); } else setMsg(r.data.error ?? tr("loadFail"));
+  };
   if (!rows) return <div className="tgx-muted">{error || tr("loading")}</div>;
   return (<>
+    <div className="tgx-muted" style={{ marginBottom: 6 }}>{tr("skBuiltinNote")}</div>
     <div className="tgx-muted" style={{ marginBottom: 10 }}>{tr("skInstalledNote")}</div>
+    <div style={{ marginBottom: 10 }}><button type="button" className="tgx-btn primary" data-tg-skill-new onClick={() => setCreating(true)}>{tr("skNew")}</button></div>
+    {creating && <SkillEditor name={null} onClose={() => setCreating(false)} onSaved={(m) => { setMsg(m); load(); }} />}
+    <SkillReview onShared={load} />
+    {msg && <div style={{ marginBottom: 10 }}>{msg}</div>}
     {rows.length === 0 && <div className="tgx-muted">{tr("skAvailEmpty")}</div>}
-    {rows.map((s) => <UseRow key={s.name} name={s.name} description={s.description} onUse={() => { closePanel(); void startConversation(null, `/skill:${s.name} `, null, me?.homeDir ?? null); }} />)}
+    {rows.map((s) => <UseRow key={s.name} name={s.title || s.name} description={s.description} badge={s.builtin ? tr("skBuiltinBadge") : s.name.startsWith("my-") ? tr("skMineBadge") : undefined}
+      extra={s.builtin ? <button type="button" className="tgx-btn" onClick={() => void copy(s.name)}>{tr("skCopyMine")}</button> : s.name.startsWith("my-") ? <MineActions name={s.name} onChanged={load} setMsg={setMsg} /> : undefined}
+      onUse={() => { closePanel(); void startConversation(null, `/skill:${s.name} `, null, me?.homeDir ?? null); }} />)}
   </>);
 }

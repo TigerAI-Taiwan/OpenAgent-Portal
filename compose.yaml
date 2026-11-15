@@ -1,25 +1,83 @@
+# OpenAgent Portal community edition. Setup: see "快速開始(Docker)" in README.md (English: README.en.md).
+#   cp .env.example .env   (fill in TIGERAI_ADMIN_EMAIL / TIGERAI_ADMIN_PASSWORD)
+#   docker compose up -d --build
+#
+# The Portal's own login replaces PI_WEB_PASSWORD, so no shared password is needed here.
+# To run plain upstream pi-web instead: remove TIGERAI_ENABLED below and set PI_WEB_PASSWORD
+# (the Portal gate is then off and upstream's single-password gate applies).
 services:
   pi-web:
-    image: openagent-portal:1.0.0-ce
+    # The published image; `docker compose up -d --build` builds the same tag from this checkout instead.
+    image: ghcr.io/tigerai-taiwan/openagent-portal:${OAP_IMAGE_TAG:-1.1.2-ce}
     build:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      PORT: "30141"
+      PORT: "30161"
       PI_WEB_HOSTNAME: 0.0.0.0
       PI_WEB_NO_OPEN: "1"
       PI_CODING_AGENT_DIR: /home/node/.pi/agent
-      PI_WEB_PASSWORD: ${PI_WEB_PASSWORD:?Set PI_WEB_PASSWORD in .env}
-      PI_WEB_ALLOWED_HOSTS: ${PI_WEB_ALLOWED_HOSTS:-}
       PI_WEB_SKIP_VERSION_CHECK: "1"
+      PI_WEB_ALLOWED_HOSTS: ${PI_WEB_ALLOWED_HOSTS:-}
+      # Upstream's single shared password; leave empty when the Portal login is on.
+      PI_WEB_PASSWORD: ${PI_WEB_PASSWORD:-}
+      # OpenAgent Portal
+      TIGERAI_ENABLED: "1"
+      TIGERAI_ADMIN_EMAIL: ${TIGERAI_ADMIN_EMAIL:-adm@local}
+      TIGERAI_VENDOR_EMAIL: ${TIGERAI_VENDOR_EMAIL:-}
+      TIGERAI_VENDOR_PASSWORD: ${TIGERAI_VENDOR_PASSWORD:-}
+      TIGERAI_VENDOR_MUST_CHANGE: ${TIGERAI_VENDOR_MUST_CHANGE:-1}
+      TIGERAI_ADMIN_PASSWORD: ${TIGERAI_ADMIN_PASSWORD:-}
+      TIGERAI_ADMIN_MUST_CHANGE: "1"
+      TIGERAI_COOKIE_SECURE: ${TIGERAI_COOKIE_SECURE:-}
+      # Schedules ("18:00", "overdue by N days") use this time zone.
+      TZ: ${TZ:-Asia/Taipei}
+      TIGERAI_TZ: ${TZ:-Asia/Taipei}
     ports:
-      - "127.0.0.1:${PI_WEB_PORT:-30141}:30141"
+      - "${PI_WEB_BIND:-127.0.0.1}:${PI_WEB_PORT:-30161}:30161"
     volumes:
+      # Everything the Portal stores (accounts, channels, database, sessions, settings) lives in this volume.
       - pi-agent-data:/home/node/.pi/agent
       - pi-cwd-data:/home/node/pi-cwd
       - ${WORKSPACE_DIR:-./workspace}:${WORKSPACE_CONTAINER_DIR:-/workspace}
 
+  # ---- OPTIONAL services, off by default (Docker Compose profiles) -------------------------------------
+  # Start the ones you want:  docker compose --profile search --profile convert --profile n8n up -d
+  # (or put COMPOSE_PROFILES=search,convert,n8n in .env). The Portal talks to them over the compose network;
+  # then enter their addresses under 設定 → 管理 and press 測試: http://searxng:8080, http://gotenberg:3000, http://n8n:5678.
+
+  # Web search for the AI (設定 → 管理 → 上網查資料). Internal only: no host port. Needs the JSON output format (docs/searxng-settings.yml).
+  searxng:
+    profiles: ["search"]
+    image: searxng/searxng:2026.9.5-c7f3080aa
+    restart: unless-stopped
+    environment:
+      SEARXNG_SECRET: ${SEARXNG_SECRET:-}
+    volumes:
+      - ./docs/searxng-settings.yml:/etc/searxng/settings.yml:ro
+
+  # Slides and filled forms as PDF (LibreOffice + CJK fonts live here, not in the Portal image). Internal only: no host port.
+  gotenberg:
+    profiles: ["convert"]
+    image: gotenberg/gotenberg:8.21.1
+    restart: unless-stopped
+
+  # n8n for 流程 (webhooks and the n8n MCP demo). The editor is reachable from this machine only (N8N_BIND=0.0.0.0 to share it).
+  n8n:
+    profiles: ["n8n"]
+    image: docker.n8n.io/n8nio/n8n:2.44.6
+    restart: unless-stopped
+    environment:
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:-}
+      GENERIC_TIMEZONE: ${TZ:-Asia/Taipei}
+      TZ: ${TZ:-Asia/Taipei}
+    ports:
+      - "${N8N_BIND:-127.0.0.1}:${N8N_PORT:-5678}:5678"
+    volumes:
+      - n8n-data:/home/node/.n8n
+
 volumes:
   pi-agent-data:
   pi-cwd-data:
+  n8n-data:

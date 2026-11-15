@@ -1,12 +1,17 @@
 "use client";
 // SPDX-License-Identifier: LicenseRef-TigerAI-SUL-Draft
 import Image from "next/image";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { BRAND_LOGO } from "@/lib/brand";
 import { call } from "./api";
 import { BasedOn } from "../ui/BasedOn";
-import { FilePick, Select, useConfirm } from "../ui/kit";
+import { PurgeDialog } from "../ui/Purge";
+import { IdleAdmin } from "../ui/IdleAdmin";
+import { RegisterAdmin, RegisterRequests } from "../ui/Register";
+import { Modal, Select, useConfirm } from "../ui/kit";
+import { LeaveDialog, UnitChangeDialog } from "../ui/OrgPanel";
 import { fmtDateTime, tr, useT } from "./i18n";
 import "./tg.css";
 
@@ -15,6 +20,7 @@ type Me = { id: string; name: string; email: string; role: "admin" | "member"; m
 export default function TgApp() {
   const path = usePathname() ?? "/tg";
   if (path.startsWith("/tg/login")) return <Login />;
+  if (path.startsWith("/tg/register")) return <Register />;
   return <Authed path={path} />;
 }
 
@@ -24,6 +30,10 @@ function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [idled, setIdled] = useState(false); // sent here by the idle sign-out
+  useEffect(() => { setIdled(new URLSearchParams(window.location.search).get("idle") === "1"); }, []);
+  const [canRegister, setCanRegister] = useState(false); // 學生自行註冊: only while the administrator's switch is on
+  useEffect(() => { void call<{ open?: boolean }>("register/status").then((r) => { if (r.ok && r.data.open) setCanRegister(true); }); }, []);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true); setError("");
@@ -42,9 +52,52 @@ function Login() {
         <form onSubmit={submit} className="tg-card">
           <label>{t("email")}<input className="tg-input" style={{ width: "100%" }} type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
           <label>{t("password")}<input className="tg-input" style={{ width: "100%" }} type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></label>
+          {idled && !error && <div className="tg-muted" role="status">{t("idleLoggedOut")}</div>}
           {error && <div className="tg-err" role="alert">{error}</div>}
           <button className="tg-btn primary" disabled={busy}>{t("signIn")}</button>
+          {canRegister && <Link className="tg-btn" href="/tg/register" data-tg-register-link style={{ textAlign: "center" }}>{t("regLink")}</Link>}
         </form>
+        <div className="tg-muted" data-tg-support style={{ textAlign: "center", fontSize: 12, marginTop: 12, userSelect: "text" }}>{t("supportLine")}</div>
+      </div>
+    </div>
+  );
+}
+
+function Register() {
+  const t = useT();
+  const [f, setF] = useState({ name: "", email: "", password: "", code: "" });
+  const [state, setState] = useState<{ open: boolean; requireCode: boolean } | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false); // 待核准: the account exists but cannot sign in yet
+  useEffect(() => { void call<{ open?: boolean; requireCode?: boolean }>("register/status").then((r) => setState({ open: !!r.data.open, requireCode: r.data.requireCode !== false })); }, []);
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true); setError("");
+    const r = await call("register", "POST", f);
+    setBusy(false);
+    if (!r.ok) { setError(r.data.error ?? tr("error")); return; }
+    if ((r.data as { pending?: boolean }).pending) { setDone(true); return; }
+    window.location.replace("/");
+  };
+  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
+  return (
+    <div className="tg-shell" style={{ justifyContent: "center" }}>
+      <div className="tg-login">
+        <h1 className="tg-brand"><Image src={BRAND_LOGO} width={40} height={40} alt="" priority />{t("product")}</h1>
+        {done ? <div className="tg-card" role="status" data-tg-register-pending><strong>{t("regPendingTitle")}</strong><span className="tg-muted">{t("regPendingHelp")}</span></div>
+        : state && !state.open ? <div className="tg-card" role="status">{t("regClosed")}</div> : (
+          <form onSubmit={submit} className="tg-card" data-tg-register-form>
+            <strong>{t("regTitle")}</strong>
+            <span className="tg-muted" style={{ fontSize: 12 }}>{t("regIntro")}</span>
+            <label>{t("regNameV")}<input className="tg-input" style={{ width: "100%" }} autoComplete="name" placeholder={t("regNamePh")} value={f.name} onChange={set("name")} required maxLength={80} /><span className="tg-muted" style={{ fontSize: 12 }}>{t("regNameHint")}</span></label>
+            <label>{t("regEmail")}<input className="tg-input" style={{ width: "100%" }} type="email" autoComplete="username" value={f.email} onChange={set("email")} required /></label>
+            <label>{t("regPassword")}<input className="tg-input" style={{ width: "100%" }} type="password" autoComplete="new-password" value={f.password} onChange={set("password")} required minLength={8} /></label>
+            <label>{state?.requireCode === false ? t("regCodeOptional") : t("regCode")}<input className="tg-input" style={{ width: "100%" }} autoComplete="off" value={f.code} onChange={set("code")} required={state?.requireCode !== false} maxLength={80} /><span className="tg-muted" style={{ fontSize: 12 }}>{t("regCodeHint")}</span></label>
+            {error && <div className="tg-err" role="alert">{error}</div>}
+            <button className="tg-btn primary" disabled={busy}>{t("regSubmit")}</button>
+          </form>)}
+        <div style={{ textAlign: "center", marginTop: 8 }}><Link href="/tg/login">{t("regBack")}</Link></div>
       </div>
     </div>
   );
@@ -110,15 +163,29 @@ export function ForcedPasswordChange() {
 
 // ---------------------------------------------------------------- admin
 
-type UserRowT = { id: string; email: string; name: string; role: string; status: string; groups: string[] };
-type GroupT = { id: string; name: string; members: { user_id: string; is_manager: number }[] };
+type UserRowT = { id: string; email: string; name: string; role: string; status: string; groups: string[]; isVendor?: boolean; left_at?: number | null };
+type GroupT = { id: string; name: string; parent_id: string | null; description?: string; archivedAt?: number | null; members: { user_id: string; is_manager: number }[] };
+
+/** 營運處 / 業務部: the names from the top unit down. */
+function unitPath(groups: GroupT[], id: string): string {
+  const names: string[] = []; const seen = new Set<string>(); let cur: string | null = id;
+  while (cur && !seen.has(cur)) { seen.add(cur); const g = groups.find((x) => x.id === cur); if (!g) break; names.unshift(g.name); cur = g.parent_id; }
+  return names.join(" / ");
+}
 
 export function Users() {
   const t = useT();
   const [users, setUsers] = useState<UserRowT[]>([]);
   const [email, setEmail] = useState(""); const [name, setName] = useState(""); const [role, setRole] = useState("member");
   const [error, setError] = useState(""); const [secret, setSecret] = useState<{ who: string; pw: string } | null>(null);
-  const load = useCallback(async () => { const r = await call<{ users: UserRowT[] }>("admin/users"); if (r.ok) setUsers(r.data.users); }, []);
+  const [allGroups, setAllGroups] = useState<GroupT[]>([]);
+  const [leaving, setLeaving] = useState<UserRowT | null>(null);
+  const [moving, setMoving] = useState<UserRowT | null>(null);
+  const load = useCallback(async () => {
+    const [r, g] = await Promise.all([call<{ users: UserRowT[] }>("admin/users"), call<{ groups: GroupT[] }>("admin/groups")]);
+    if (r.ok) setUsers(r.data.users);
+    if (g.ok) setAllGroups(g.data.groups);
+  }, []);
   useEffect(() => { void load(); }, [load]);
   const add = async (e: FormEvent) => {
     e.preventDefault(); setError("");
@@ -128,27 +195,38 @@ export function Users() {
   };
   const patch = async (id: string, body: object) => { const r = await call("admin/users/" + id, "PATCH", body); if (!r.ok) setError(r.data.error ?? tr("error")); else setError(""); void load(); };
   const { ask, dialog } = useConfirm();
+  const [purging, setPurging] = useState<string | null>(null);
   const reset = async (u: UserRowT) => { const r = await call<{ initialPassword: string }>(`admin/users/${u.id}/reset`, "POST", {}); if (r.ok) setSecret({ who: u.email, pw: r.data.initialPassword }); void load(); };
   return (<>
+    <RegisterRequests />
+    <RegisterAdmin />
+    <IdleAdmin />
     <form className="tg-card" onSubmit={add} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "end" }}>
       <label>{t("email")}<br /><input className="tg-input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
-      <label>{t("name")}<br /><input className="tg-input" value={name} onChange={(e) => setName(e.target.value)} required /></label>
+      <label>{tr("acName")}<br /><input className="tg-input" value={name} placeholder={tr("acNamePh")} onChange={(e) => setName(e.target.value)} required /></label>
       <label>{t("role")}<br /><Select ariaLabel={t("role")} width={140} value={role} onChange={setRole} options={[{ value: "member", label: t("member") }, { value: "admin", label: t("administrator") }]} /></label>
       <button className="tg-btn primary">{t("newUser")}</button>
     </form>
     {error && <div className="tg-err" role="alert">{error}</div>}
     {secret && <div className="tg-card" role="status"><div className="tg-muted">{t("oneTimePw")} - {secret.who}</div><code data-testid="one-time-password" style={{ fontSize: 16 }}>{secret.pw}</code></div>}
     <div className="tg-card"><table className="tg-table">
-      <thead><tr><th>{t("name")}</th><th>{t("email")}</th><th>{t("role")}</th><th>{t("status")}</th><th /></tr></thead>
+      <thead><tr><th>{t("name")}</th><th>{t("email")}</th><th>{tr("unitsCol")}</th><th>{t("role")}</th><th>{t("status")}</th><th /></tr></thead>
       <tbody>{users.map((u) => (
-        <tr key={u.id}>
-          <td>{u.name}</td><td>{u.email}</td><td>{u.role === "admin" ? t("administrator") : t("member")}</td><td>{u.status === "active" ? t("active") : t("disabled")}</td>
+        <tr key={u.id} data-user-row={u.name}>
+          <td>{u.name}{u.isVendor && <span className="tg-muted"> · {t("vendorTag")}</span>}</td><td>{u.email}</td>
+          <td>{u.groups.map((id) => allGroups.find((g) => g.id === id)?.name).filter(Boolean).join("、")}</td>
+          <td>{u.role === "admin" ? t("administrator") : t("member")}</td><td>{u.status === "active" ? t("active") : u.left_at ? tr("leftTag") : t("disabled")}</td>
           <td style={{ whiteSpace: "nowrap" }}>
-            <button className="tg-btn" onClick={() => (u.status === "active" ? ask(tr("cfDisableUser", { name: u.name }), t("disable"), () => patch(u.id, { status: "disabled" })) : void patch(u.id, { status: "active" }))}>{u.status === "active" ? t("disable") : t("enable")}</button>{" "}
-            <button className="tg-btn" onClick={() => ask(tr("cfResetPw", { name: u.name }), t("reset"), () => reset(u))}>{t("reset")}</button>
+            {u.status === "active" && !u.isVendor && <button className="tg-btn" data-move-user={u.name} onClick={() => setMoving(u)}>{tr("moveBtn")}</button>}{" "}
+            {!u.isVendor && <button className="tg-btn" data-leave-user={u.name} onClick={() => (u.status === "active" ? setLeaving(u) : void patch(u.id, { status: "active" }))}>{u.status === "active" ? tr("leaveBtn") : tr("rejoinBtn")}</button>}{" "}
+            {!u.isVendor && <button className="tg-btn" onClick={() => ask(tr("cfResetPw", { name: u.name }), t("reset"), () => reset(u))}>{t("reset")}</button>}
+            {!u.isVendor && u.status === "disabled" && <button className="tg-btn" data-tg-purge-open onClick={() => setPurging(u.id)}>{tr("purgeDo")}</button>}
           </td>
         </tr>))}</tbody>
     </table></div>
+    {purging && <PurgeDialog userId={purging} onClose={() => setPurging(null)} onDone={() => { setPurging(null); void load(); }} />}
+    {leaving && <LeaveDialog user={leaving} people={users} onClose={() => setLeaving(null)} onDone={() => { setLeaving(null); void load(); }} />}
+    {moving && <UnitChangeDialog user={moving} people={users} units={allGroups.map((g) => ({ id: g.id, name: unitPath(allGroups, g.id) }))} current={moving.groups} onClose={() => setMoving(null)} onDone={() => { setMoving(null); void load(); }} />}
     {dialog}
   </>);
 }
@@ -159,23 +237,32 @@ export function Groups() {
   const [groups, setGroups] = useState<GroupT[]>([]);
   const [users, setUsers] = useState<UserRowT[]>([]);
   const [name, setName] = useState(""); const [error, setError] = useState("");
+  const [parentId, setParentId] = useState("");
+  const [editing, setEditing] = useState<GroupT | null>(null);
   const load = useCallback(async () => {
     const [g, u] = await Promise.all([call<{ groups: GroupT[] }>("admin/groups"), call<{ users: UserRowT[] }>("admin/users")]);
     if (g.ok) setGroups(g.data.groups); if (u.ok) setUsers(u.data.users);
   }, []);
   useEffect(() => { void load(); }, [load]);
-  const add = async (e: FormEvent) => { e.preventDefault(); const r = await call("admin/groups", "POST", { name }); if (!r.ok) setError(r.data.error ?? tr("error")); else { setError(""); setName(""); void load(); } };
+  const add = async (e: FormEvent) => { e.preventDefault(); const r = await call("admin/groups", "POST", { name, parentId: parentId || null }); if (!r.ok) setError(r.data.error ?? tr("error")); else { setError(""); setName(""); setParentId(""); void load(); } };
+  const parentOptions = (exceptId?: string) => [{ value: "", label: tr("grpNoParent") }, ...groups.filter((g) => g.id !== exceptId).map((g) => ({ value: g.id, label: unitPath(groups, g.id) }))];
   const member = async (g: string, userId: string, present: boolean, isManager = false) => { await call(`admin/groups/${g}/members`, "PUT", { userId, present, isManager }); void load(); };
   return (<>
     <form className="tg-card" onSubmit={add} style={{ display: "flex", gap: 8 }}>
       <input className="tg-input" placeholder={t("groupName")} aria-label={t("groupName")} value={name} onChange={(e) => setName(e.target.value)} required />
+      <Select ariaLabel={tr("grpParent")} width={220} value={parentId} onChange={setParentId} options={parentOptions()} />
       <button className="tg-btn primary">{t("create")}</button>
     </form>
     {error && <div className="tg-err" role="alert">{error}</div>}
     {groups.map((g) => (
       <div className="tg-card" key={g.id}>
-        <div style={{ display: "flex", justifyContent: "space-between" }}><strong>{g.name}</strong>
-          <button className="tg-btn" onClick={() => ask(tr("cfDelGroup", { name: g.name }), t("remove"), async () => { await call("admin/groups/" + g.id, "DELETE"); void load(); })}>{t("remove")}</button></div>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><strong data-unit-path={unitPath(groups, g.id)}>{unitPath(groups, g.id)}{g.archivedAt && <span className="tg-muted" data-tg-archived> · {tr("archBadge")}</span>}</strong>
+          <span style={{ display: "flex", gap: 8 }}>
+            <button className="tg-btn" data-unit-edit={g.name} onClick={() => setEditing(g)}>{tr("grpEdit")}</button>
+            {g.archivedAt ? <button className="tg-btn" onClick={async () => { await call(`admin/groups/${g.id}/archive`, "POST", { archived: false }); void load(); }}>{tr("archUndo")}</button>
+              : <button className="tg-btn" data-tg-archive onClick={() => ask(tr("archAsk", { name: g.name }), tr("archTitle"), async () => { await call(`admin/groups/${g.id}/archive`, "POST", { archived: true }); void load(); })}>{tr("archTitle")}</button>}
+            <button className="tg-btn" onClick={() => ask(tr("cfDelGroup2", { name: g.name }), t("remove"), async () => { await call("admin/groups/" + g.id, "DELETE"); void load(); })}>{t("remove")}</button>
+          </span></div>
         <div style={{ margin: "8px 0", display: "flex", gap: 6, flexWrap: "wrap" }}>
           {g.members.map((m) => {
             const u = users.find((x) => x.id === m.user_id); const head = m.is_manager === 1; const nm = u?.name ?? m.user_id;
@@ -189,12 +276,29 @@ export function Groups() {
         </div>
         <Select ariaLabel={t("addMember")} placeholder={`${t("addMember")}...`} width={220} value="" onChange={(v) => v && member(g.id, v, true)} options={users.filter((u) => !g.members.some((m) => m.user_id === u.id)).map((u) => ({ value: u.id, label: u.name }))} />
       </div>))}
+    {editing && <GroupEdit group={editing} options={parentOptions(editing.id)} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); void load(); }} />}
     {dialog}
   </>);
 }
 
+/** Rename a unit and/or move it under another one (the server refuses a loop; the folder on disk never changes). */
+function GroupEdit({ group, options, onClose, onSaved }: { group: GroupT; options: { value: string; label: string }[]; onClose: () => void; onSaved: () => void }) {
+  const [name, setName] = useState(group.name);
+  const [parent, setParent] = useState(group.parent_id ?? "");
+  const [error, setError] = useState("");
+  return (<Modal title={`${tr("grpEdit")}: ${group.name}`} onClose={onClose}>
+    {error && <div className="tg-err" role="alert">{error}</div>}
+    <label>{tr("grpRename")}<br /><input className="tg-input" aria-label={tr("grpRename")} value={name} onChange={(e) => setName(e.target.value)} style={{ width: "100%" }} /></label>
+    <label style={{ display: "block", marginTop: 10 }}>{tr("grpParent")}<br /><Select ariaLabel={tr("grpParent")} width={260} value={parent} onChange={setParent} options={options} /></label>
+    <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+      <button className="tg-btn" onClick={onClose}>{tr("cancel")}</button>
+      <button className="tg-btn primary" data-unit-save onClick={async () => { const r = await call(`admin/groups/${group.id}`, "PATCH", { name, parentId: parent || null }); if (r.ok) onSaved(); else setError(r.data.error ?? tr("error")); }}>{tr("grpSave")}</button>
+    </div>
+  </Modal>);
+}
+
 type PromptT = { id: string; name: string; description: string; body: string; enabled: boolean; source_id?: string | null; ticks?: string[]; shareStatus?: string | null };
-type OrderT = { id: string; kind: string; applicant_id: string; payload: { name?: string; body?: string; description?: string }; status: string; created_at: number };
+type OrderT = { id: string; kind: string; applicant_id: string; applicant_name?: string; payload: { name?: string; body?: string; description?: string }; status: string; created_at: number };
 
 /** Admin: publish into the company library. Groups are not assigned here: department heads tick. */
 export function Prompts() {
@@ -243,13 +347,13 @@ export function WorkOrders() {
     {orders.map((o) => (
       <div className="tg-card" key={o.id}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-          <strong>{t("shareRequest")}: /{o.payload.name}</strong><span className="tg-badge">{t(`status_${o.status}` as never)}</span>
+          <strong>{t("shareRequest")}: {o.kind === "prompt_share" ? "/" : ""}{o.payload.name}</strong><span className="tg-badge">{t(`status_${o.status}` as never)}</span>
         </div>
         <pre style={{ whiteSpace: "pre-wrap", margin: "8px 0" }}>{o.payload.body}</pre>
-        <div className="tg-muted" style={{ fontSize: 12 }}>{o.applicant_id} · {fmtDateTime(o.created_at)}</div>
+        <div className="tg-muted" style={{ fontSize: 12 }}>{o.applicant_name ?? o.applicant_id} · {fmtDateTime(o.created_at)}</div>
         {o.status === "pending" && <div style={{ marginTop: 8 }}>
-          <button className="tg-btn primary" onClick={() => ask(tr("cfApprove", { name: o.payload.name ?? "" }), t("approve"), () => decide(o.id, true))}>{t("approve")}</button>{" "}
-          <button className="tg-btn" onClick={() => ask(tr("cfReject", { name: o.payload.name ?? "" }), t("reject"), () => decide(o.id, false))}>{t("reject")}</button></div>}
+          <button className="tg-btn primary" onClick={() => ask(tr(o.kind === "prompt_share" ? "cfApprove" : "cfApproveN", { name: o.payload.name ?? "" }), t("approve"), () => decide(o.id, true))}>{t("approve")}</button>{" "}
+          <button className="tg-btn" onClick={() => ask(tr(o.kind === "prompt_share" ? "cfReject" : "cfRejectN", { name: o.payload.name ?? "" }), t("reject"), () => decide(o.id, false))}>{t("reject")}</button></div>}
       </div>))}
     {dialog}
   </>);
@@ -359,7 +463,7 @@ export function Roles() {
 }
 
 /** n8n webhooks (community scope): webhooks the AI may call, and keys for n8n to call the Portal. */
-type N8nItem = { id: string; name: string; display_name?: string; url: string; description?: string; group_ids: string[]; enabled: boolean; hasToken?: boolean; hasHeader?: boolean; allow_tools?: string[] };
+type N8nItem = { method?: "GET" | "POST"; id: string; name: string; display_name?: string; url: string; description?: string; group_ids: string[]; enabled: boolean; hasToken?: boolean; hasHeader?: boolean; allow_tools?: string[] };
 type KeyT = { id: string; name: string; prefix: string; agent_id: string | null; room_id: string | null; revoked_at: number | null; last_used: number | null };
 
 export function N8n() {
@@ -371,7 +475,7 @@ export function N8n() {
   const [keys, setKeys] = useState<KeyT[]>([]);
   const [groups, setGroups] = useState<GroupT[]>([]);
   const [roles, setRoles] = useState<RoleT[]>([]);
-  const [fh, setFh] = useState({ name: "", display_name: "", url: "", description: "", header: "" });
+  const [fh, setFh] = useState({ name: "", display_name: "", url: "", method: "POST", description: "", header: "" });
   const [fk, setFk] = useState({ name: "", agent_id: "" });
   const [secret, setSecret] = useState("");
   const [error, setError] = useState("");
@@ -412,17 +516,18 @@ export function N8n() {
     {error && <div className="tg-err" role="alert">{error}</div>}
     <h3>{t("n8nWebhooks")}</h3>
     <p className="tg-muted">{t("n8nWebhookHelp")}</p>
-    <form className="tg-card" style={{ display: "flex", flexDirection: "column", gap: 8 }} onSubmit={async (e) => { e.preventDefault(); const r = await call("admin/n8n/webhooks", "POST", fh); fail(r); if (r.ok) setFh({ name: "", display_name: "", url: "", description: "", header: "" }); void load(); }}>
+    <form className="tg-card" style={{ display: "flex", flexDirection: "column", gap: 8 }} onSubmit={async (e) => { e.preventDefault(); const r = await call("admin/n8n/webhooks", "POST", fh); fail(r); if (r.ok) setFh({ name: "", display_name: "", url: "", method: "POST", description: "", header: "" }); void load(); }}>
       <input className="tg-input" placeholder={t("n8nDisplay")} aria-label={t("n8nDisplay")} maxLength={40} value={fh.display_name} onChange={(e) => setFh({ ...fh, display_name: e.target.value })} />
       <input className="tg-input" placeholder={t("n8nName")} aria-label={t("n8nName")} value={fh.name} onChange={(e) => setFh({ ...fh, name: e.target.value })} required />
       <input className="tg-input" placeholder="https://…/webhook/…" aria-label={tr("whUrl")} value={fh.url} onChange={(e) => setFh({ ...fh, url: e.target.value })} required />
+      <label className="tg-muted">{tr("whMethod")} <select className="tg-input" data-testid="wh-method" value={fh.method} onChange={(e) => setFh({ ...fh, method: e.target.value })}><option value="POST">POST</option><option value="GET">GET</option></select> <span style={{ fontSize: 12 }}>{tr("whMethodHint")}</span></label>
       <textarea className="tg-input" rows={2} placeholder={t("n8nInputHelp")} aria-label={t("n8nInputHelp")} value={fh.description} onChange={(e) => setFh({ ...fh, description: e.target.value })} />
       <input className="tg-input" type="password" autoComplete="off" placeholder={t("n8nHeader")} aria-label={t("n8nHeader")} value={fh.header} onChange={(e) => setFh({ ...fh, header: e.target.value })} />
       <div><button className="tg-btn primary">{t("create")}</button></div>
     </form>
     {hooks.map((h) => (
       <div className="tg-card" key={h.id}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}><strong>{h.display_name || h.name} <span className="tg-muted" style={{ fontWeight: 400 }}>({h.name})</span></strong><span className="tg-muted">{h.url}{h.hasHeader ? ` · ${tr("headerStored")}` : ""}</span>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}><strong>{h.display_name || h.name} <span className="tg-muted" style={{ fontWeight: 400 }}>({h.name})</span></strong><span className="tg-muted">{h.method ?? "POST"} {h.url}{h.hasHeader ? ` · ${tr("headerStored")}` : ""}</span>
           <button className="tg-btn" onClick={() => ask(tr("cfDelWebhook", { name: h.display_name || h.name }), t("delete"), async () => { fail(await call("admin/n8n/webhooks/" + h.id, "DELETE")); void load(); })}>{t("delete")}</button></div>
         <input key={`${h.id}:${h.display_name ?? ""}`} className="tg-input" style={{ marginTop: 6, width: "100%", boxSizing: "border-box" }} placeholder={t("n8nDisplay")} aria-label={`${t("n8nDisplay")} ${h.name}`} maxLength={40} defaultValue={h.display_name ?? ""} onBlur={(e) => void rename(h, e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} />
         <div className="tg-muted">{h.description}</div>
@@ -464,32 +569,5 @@ export function Audit() {
   </>);
 }
 
-type OrgPreview = { errors: { sheet: string; row: number; col: string; message: string }[]; summary: Record<string, number>; token?: string; passwords?: never };
 
-export function Org() {
-  const t = useT();
-  const { ask, dialog } = useConfirm();
-  const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<OrgPreview | null>(null);
-  const [msg, setMsg] = useState("");
-  const [csv, setCsv] = useState("");
-  const send = async (apply: boolean) => {
-    if (!file) return;
-    setMsg("");
-    const r = await fetch(`/api/tg/admin/org/${apply ? "apply" : "preview"}`, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) { setMsg(j.error ?? tr("error")); return; }
-    if (apply) { setCsv(j.initialPasswordsCsv ?? ""); setPreview(null); setMsg(`${tr("saved")}: ${JSON.stringify(j.summary)}`); } else setPreview(j);
-  };
-  return (<div className="tg-card">
-    <p className="tg-muted">{t("orgHelp")}</p>
-    <FilePick accept=".xlsx" ariaLabel={t("orgUpload")} file={file} onPick={(f) => { setFile(f); setPreview(null); }} />{" "}
-    <button className="tg-btn" disabled={!file} onClick={() => send(false)}>{t("preview")}</button>{" "}
-    <button className="tg-btn primary" disabled={!file || !preview || preview.errors.length > 0} onClick={() => ask(tr("cfOrgApply"), t("apply"), () => send(true))}>{t("apply")}</button>
-    {msg && <div className="tg-err" role="alert">{msg}</div>}
-    {preview && <div><pre>{JSON.stringify(preview.summary, null, 1)}</pre>{preview.errors.map((e, i) => <div className="tg-err" key={i}>{e.sheet} {e.col}{e.row}: {e.message}</div>)}</div>}
-    {csv && <div><div className="tg-muted">initial-passwords.csv</div><pre data-testid="org-passwords">{csv}</pre></div>}
-    {dialog}
-  </div>);
-}
 

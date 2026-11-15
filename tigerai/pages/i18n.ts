@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: LicenseRef-TigerAI-SUL-Draft
 import { enAddon, zhAddon } from "./i18n-addon";
 import { enN8nWebhook, zhN8nWebhook } from "./i18n-n8n";
+import { ERR_ZH_BYOK, enByok, zhByok } from "./i18n-byok";
+import { enWeb, zhWeb } from "./i18n-web";
+import { ERR_ZH_SCHOOL, enUsage, enSchool, zhUsage, zhSchool } from "./i18n-school";
 const en = {
   product: "OpenAgent Portal", signIn: "Sign in", email: "Email", password: "Password", signOut: "Sign out",
   chats: "Conversations", rooms: "Rooms", admin: "Administration", account: "Account",
@@ -35,24 +38,24 @@ const zh: typeof en = {
 };
 
 const zhX = {
-  tabAccount: "帳號", tabPrompts: "提示詞", tabAssignments: "交辦單", tabAdmin: "管理", tabModels: "模型", tabDeleted: "已刪除頻道", tabRoles: "AI 角色", tabPromptLibrary: "提示詞上架",
+  tabAccount: "帳號", tabPrompts: "提示詞", tabAssignments: "交辦單", tabAdmin: "管理", tabModels: "模型", tabDeleted: "已封存頻道", tabRoles: "AI 角色", tabPromptLibrary: "提示詞上架",
   settings: "設定", settingsOf: "{name} 的設定", models: "模型", skills: "技能", signOutConfirm: "確定要登出嗎?", cancel: "取消", confirm: "確定", close: "關閉", back: "返回",
   newMenu: "新增", newChat: "新對話", newRoomItem: "新頻道", newAssignment: "新交辦單", roomName: "頻道名稱", pickMembers: "勾選成員", createAndEnter: "建立並進入",
   functionsBtn: "功能", fnRoles: "AI 角色", fnRolesDesc: "用公司共用或你自己的 AI 角色開一段新對話", fnPlain: "一般對話", fnPlainDesc: "使用預設模型,不套用角色",
   greeting: "你好,{name},今天想做什麼?", fnRolesEmpty: "你的功能表還沒有精靈,按底部的「精靈」加進來。", fnShared: "公司共用", fnMine: "我的",
-  placeholder: "輸入訊息,@AI 問助理,# 叫出提示詞", notMember: "你不是這個頻道的成員", joinRoom: "加入頻道", roomOnly: "這段對話只能從頻道使用", adminViewing: "你以管理員身分檢視(非成員)", roomClosed: "頻道已關閉,目前唯讀", roomDeleted: "此頻道已刪除",
-  moreMenu: "更多", warn: "警告", closeRoom: "關閉頻道", reopenRoom: "重新開啟頻道", deleteRoom: "刪除頻道", warnText: "警告內容", sendWarn: "發出警告", deleteConfirm: "確定要刪除這個頻道嗎?管理員可在 30 天內從設定還原。", removeMember: "移除成員",
+  placeholder: "輸入訊息,@AI 問助理,# 叫出提示詞", notMember: "你不是這個頻道的成員", joinRoom: "加入頻道", roomOnly: "這段對話只能從頻道使用", adminViewing: "你以管理員身分檢視(非成員)", roomClosed: "頻道已關閉,目前唯讀", roomDeleted: "此頻道已封存",
+  moreMenu: "更多", warn: "警告", closeRoom: "關閉頻道", reopenRoom: "重新開啟頻道", deleteRoom: "封存頻道", warnText: "警告內容", sendWarn: "發出警告", deleteConfirm: "確定要封存這個頻道嗎?封存後所有人看不到,資料永久保留,管理員隨時可以從設定還原。", removeMember: "移除成員",
   you: "你", ai: "AI", warning: "警告", roomMembers: "成員", unreadN: "{n} 則未讀", openRoomFail: "無法開啟頻道", send2: "傳送", mention: "提及",
   accountName: "名稱", language: "語言", langZh: "繁體中文", langEn: "English", theme: "外觀", themeLight: "淺色", themeDark: "深色", themeAuto: "跟隨系統", passwordTitle: "更改密碼", saved: "已儲存", workspaceOf: "{name} 的工作區",
   asTitle: "標題", asDesc: "說明", asAssignee: "指派給", asDue: "到期日", asLinkSession: "附上目前對話", asCreate: "建立交辦單", asMineTab: "我開的", asAssignedTab: "指派給我", asAllTab: "全部", asAccept: "接受", asComplete: "完成", asReturn: "退回", asReason: "退回原因", asNote: "完成說明", asStatus_open: "待接受", asStatus_accepted: "進行中", asStatus_done: "已完成", asStatus_returned: "已退回", asNone: "沒有交辦單。", asPending: "待我處理 {n}", asBy: "申請人", asTo: "負責人", pickUser: "選擇成員...",
   mdlBaseUrl: "v1 基底網址", mdlTest: "測試連線", mdlKey: "API 金鑰", mdlKeyHas: "已設定(末四碼 {last4})", mdlKeyNone: "尚未設定", mdlKeyHelp: "貼上一次即可,不會再顯示", mdlFetch: "從閘道取得模型清單", mdlOffered: "提供的模型", mdlDefault: "預設模型", mdlCtx: "上下文長度", mdlMax: "最大輸出", mdlSave: "儲存設定", mdlOk: "連線成功,共 {n} 個模型({ms} ms)", mdlFail: "連線失敗", mdlHint: "儲存後從下一則訊息起生效,不需重啟。", mdlAll: "全部(閘道列出的都提供)",
-  delRooms: "已刪除頻道", delNone: "沒有已刪除的頻道。", restore: "還原", daysLeft: "還剩 {n} 天", deletedBy: "刪除者",
+  delRooms: "已封存頻道", delNone: "沒有已封存的頻道。", restore: "還原", daysLeft: "永久保留,不會自動刪除", deletedBy: "封存者",
   error: "發生錯誤", headViewing: "你以主管身分檢視(非成員)", tokenStored: "權杖已儲存", noToken: "沒有權杖", tools: "工具", none: "無", status_pending: "待核可", status_approved: "已核准", status_rejected: "已駁回",
   roomsTitle: "頻道", roomEmpty: "選一個頻道,或用左上角的 + 建立新頻道。", ownerBadge: "管理者", ctxMenuMembers: "成員", add: "加入", addToRoom: "加入成員",
   headOnly: "部門主管可在這裡為部門勾選", noSettingsAccess: "你沒有權限使用這個頁面。", loadFail: "載入失敗",
 } as const;
 const enX: Partial<Record<keyof typeof zhX, string>> = {
-  tabAccount: "Account", tabPrompts: "Prompts", tabAssignments: "Assignments", tabAdmin: "Administration", tabModels: "Models", tabDeleted: "Deleted rooms", tabRoles: "AI roles", tabPromptLibrary: "Prompt library",
+  tabAccount: "Account", tabPrompts: "Prompts", tabAssignments: "Assignments", tabAdmin: "Administration", tabModels: "Models", tabDeleted: "Archived rooms", tabRoles: "AI roles", tabPromptLibrary: "Prompt library",
   settings: "Settings", settingsOf: "Settings of {name}", models: "Models", skills: "Skills", signOutConfirm: "Sign out?", cancel: "Cancel", confirm: "OK", close: "Close", back: "Back",
   newMenu: "New", newChat: "New conversation", newRoomItem: "New room", newAssignment: "New assignment", roomName: "Room name", pickMembers: "Tick members", createAndEnter: "Create and enter",
   functionsBtn: "Functions", placeholder: "Write a message, @AI to ask the assistant, # for prompts", notMember: "You are not a member of this room", joinRoom: "Join room", roomOnly: "This conversation can only be used from its room", adminViewing: "Viewing as administrator (not a member)",
@@ -62,7 +65,7 @@ const zhY = {
   saving: "儲存中...",
   cfRemoveRoomMember: "確定要把 {name} 移出這個頻道嗎?", cfCloseRoom: "確定要關閉這個頻道嗎?關閉後只能閱讀,之後可以重新開啟。",
   cfDelGroup: "確定要刪除群組「{name}」嗎?成員帳號不會被刪除,但會失去這個群組給的權限。", cfRemoveGroupMember: "確定要把 {name} 移出群組「{group}」嗎?",
-  cfDelPrompt: "確定要刪除提示詞「/{name}」嗎?", cfDisableRole: "確定要停用 AI 角色「@{name}」嗎?", cfApprove: "確定要核可「/{name}」這筆申請嗎?", cfReject: "確定要駁回「/{name}」這筆申請嗎?",
+  cfDelPrompt: "確定要刪除提示詞「/{name}」嗎?", cfDisableRole: "確定要停用 AI 角色「@{name}」嗎?", cfApprove: "確定要核可「/{name}」這筆申請嗎?", cfReject: "確定要駁回「/{name}」這筆申請嗎?", cfApproveN: "確定要核可「{name}」這筆申請嗎?", cfRejectN: "確定要駁回「{name}」這筆申請嗎?",
   
   cfDisableUser: "確定要停用「{name}」的帳號嗎?他將無法登入。", cfResetPw: "確定要重設「{name}」的密碼嗎?舊密碼會立刻失效。", cfOrgApply: "確定要套用這份組織檔嗎?會依預覽結果新增與更新成員與群組。",
   autoLabel: "自動", configuredLabel: "已設定",
@@ -127,6 +130,7 @@ const zhV11 = {
   asTabToMe: "交辦我", asTabByMe: "我交辦", asKindAll: "全部", asKindUser: "交給人", asKindAi: "交給 AI",
   asTagPerson: "人", asTagAi: "AI", asTagN8n: "n8n",
   asGiveTo: "交給", asToPerson: "人", asToAi: "AI", asPickRole: "AI 角色", asGeneralAi: "一般 AI",
+  asReadRoom: "讓 AI 讀「{name}」頻道最近的訊息(唯讀,不用再貼資料)",
   asAiHint: "AI 會在背景處理,不用開著瀏覽器;做完會通知你,由你確認。AI 能做的事不會超過你自己。",
   asRun_running: "進行中", asRun_review: "待確認", asAiWorking: "AI 正在背景處理,可以先關掉這個視窗。", asOpenChat: "開啟對話",
   asToastDone: "AI 做完了:{title}", asToastError: "AI 做的時候出了問題:{title}", asToastRestart: "伺服器重新啟動,工作中斷:{title}", asAiWaiting: "AI 做完了,等你確認",
@@ -134,6 +138,7 @@ const zhV11 = {
 const enV11: Partial<Record<keyof typeof zhV11, string>> = {
   hashTitle: "Prompts", hashMine: "My prompts", hashCompany: "Company prompts", hashRequired: "(required)", hashFill: "Fill in \"{name}\"", hashPreview: "Text to insert:", hashInsert: "Insert",
   asTabToMe: "Handed to me", asTabByMe: "Handed out by me", asKindAll: "All", asKindUser: "To people", asKindAi: "To AI", asGiveTo: "Give to", asToPerson: "Person", asToAi: "AI", asPickRole: "AI role", asGeneralAi: "General AI",
+  asReadRoom: "Let the AI read the latest messages of \"{name}\" (read-only, no pasting)",
   asRun_running: "In progress", asRun_review: "To confirm", asOpenChat: "Open conversation",
   asToastDone: "AI is done: {title}", asToastError: "AI ran into a problem: {title}", asToastRestart: "Server restarted, work interrupted: {title}", asAiWaiting: "AI is done, waiting for you",
 };
@@ -153,9 +158,14 @@ const enCE: Partial<Record<keyof typeof zhCE, string>> = {
   fbNoteLabel: "Fallback note",
 };
 import { enWiz, zhWiz } from "./i18n-wizard";
-export type Key = keyof typeof zhWiz | keyof typeof zhV11 | keyof typeof zh | keyof typeof zhX | keyof typeof zhY | keyof typeof zhZ | keyof typeof zhV9 | keyof typeof zhV10 | keyof typeof zhCE | keyof typeof zhAddon | keyof typeof zhN8nWebhook;
-const ZH: Record<Key, string> = { ...zh, ...zhX, ...zhY, ...zhZ, ...zhV9, ...zhV10, ...zhV11, ...zhCE, ...zhAddon, ...zhN8nWebhook, ...zhWiz };
-const EN: Partial<Record<Key, string>> = { ...en, ...enX, ...enY, ...enZ, ...enV9, ...enV10, ...enV11, ...enCE, ...enAddon, ...enN8nWebhook, ...enWiz };
+import { enUL, zhUL } from "./i18n-userlog";
+import { enKn, zhKn } from "./i18n-knowledge";
+import { enV111, zhV111 } from "./i18n-v11";
+import { enV112, zhV112 } from "./i18n-v12";
+import { enOrg, zhOrg } from "./i18n-org";
+export type Key = keyof typeof zhV112 | keyof typeof zhV111 | keyof typeof zhOrg | keyof typeof zhWiz | keyof typeof zhUL | keyof typeof zhKn | keyof typeof zhV11 | keyof typeof zh | keyof typeof zhX | keyof typeof zhY | keyof typeof zhZ | keyof typeof zhV9 | keyof typeof zhV10 | keyof typeof zhCE | keyof typeof zhAddon | keyof typeof zhN8nWebhook | keyof typeof zhByok | keyof typeof zhSchool | keyof typeof zhUsage | keyof typeof zhWeb;
+const ZH: Record<Key, string> = { ...zh, ...zhX, ...zhY, ...zhZ, ...zhV9, ...zhV10, ...zhV11, ...zhCE, ...zhAddon, ...zhN8nWebhook, ...zhByok, ...zhWiz, ...zhUL, ...zhKn, ...zhOrg, ...zhSchool, ...zhUsage, ...zhWeb, ...zhV111, ...zhV112 };
+const EN: Partial<Record<Key, string>> = { ...en, ...enX, ...enY, ...enZ, ...enV9, ...enV10, ...enV11, ...enCE, ...enAddon, ...enN8nWebhook, ...enByok, ...enWiz, ...enUL, ...enKn, ...enOrg, ...enSchool, ...enUsage, ...enWeb, ...enV111, ...enV112 };
 
 /** zh-TW is the default. A person can switch to English in Settings › Account (stored in this browser only). */
 export function currentLang(): "zh" | "en" {
@@ -189,6 +199,8 @@ export function useTx(): typeof trx { return trx; }
  * then by the few codeless messages. An unknown code keeps the server's own text, so nothing is hidden.
  */
 const ERR_ZH: Record<string, string> = {
+  ...ERR_ZH_BYOK,
+  ...ERR_ZH_SCHOOL,
   too_many: "連線最多 8 組", bad_enabled: "啟用狀態不正確",
   not_configured: "尚未設定 v1 基底網址", gateway: "無法連到模型閘道", bad_url: "網址格式不正確(需為 http:// 或 https://,且不可含帳密)",
   bad_key: "API 金鑰格式不正確", bad_default: "預設模型必須是已開放的模型", bad_offered: "開放模型清單格式不正確",
@@ -197,7 +209,7 @@ const ERR_ZH: Record<string, string> = {
   bad_name: "名稱不符合規則", bad_title: "標題必填(最多 120 字)", bad_description: "說明太長", bad_body: "內容必填且不可太長",
   bad_email: "電子郵件格式不正確", bad_role: "角色不正確", bad_parent: "上層群組不存在", bad_room: "找不到這個頻道", bad_agent: "找不到這個 AI 角色",
   bad_assignee: "請選擇一位啟用中的成員", bad_due: "到期日不正確", bad_session: "這段對話無法使用", bad_header: "標頭格式需為「名稱: 值」", bad_json: "資料格式不正確",
-  content_type: "資料格式不正確", exists: "名稱已被使用", empty: "內容不可為空", decided: "這張單已經核可過", invalid_file: "檔案有錯誤,請先預覽",
+  content_type: "資料格式不正確", exists: "已被使用（電子郵件不能重複）", empty: "內容不可為空", decided: "這張單已經核可過", invalid_file: "檔案有錯誤,請先預覽",
   last_admin: "不能停用或降級最後一位管理員", limit: "已達數量上限", not_closed: "這個頻道沒有關閉", bound: "這個頻道已經有 AI 對話", owner: "只有頻道管理者或管理員可以這樣做",
   pending: "還有待處理的項目", reason_required: "請填寫原因", room_closed: "這個頻道已關閉", self_approval: "申請人不能核可自己的單", self_lockout: "不能對自己的帳號這樣做",
   too_long: "內容太長", unknown_kind: "不支援的類型", weak_password: "密碼強度不足", same_password: "請使用和目前不同的密碼", bad_current: "目前密碼不正確",

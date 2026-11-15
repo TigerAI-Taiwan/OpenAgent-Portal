@@ -52,14 +52,17 @@ export function groupsOf(userId: string): string[] {
 }
 export function allowed(person: Person, groupIds: string[]): boolean {
   if (person.role === "admin") return true;
+  if (groupIds.includes("*")) return true; // 1.1.0-ce 全公司: a published app visible to every member (n8n/publish.ts)
   const mine = new Set(groupsOf(person.id));
   return groupIds.some((g) => mine.has(g));
 }
 
 // ---- outbound webhooks ---------------------------------------------------------
-export interface Webhook { id: string; name: string; display_name: string; url: string; description: string; group_ids: string[]; enabled: boolean; hasHeader?: boolean }
-interface HookRaw { id: string; name: string; display_name?: string; url: string; description: string; group_ids: string; enabled: number }
-const hook = (r: HookRaw): Webhook => ({ id: r.id, name: r.name, display_name: r.display_name ?? "", url: r.url, description: r.description, group_ids: list(r.group_ids), enabled: r.enabled === 1 });
+export interface Webhook { id: string; name: string; display_name: string; url: string; description: string; group_ids: string[]; enabled: boolean; /** the HTTP method the workflow's Webhook node listens on */ method: WebhookMethod; hasHeader?: boolean }
+export type WebhookMethod = "GET" | "POST";
+export const cleanMethod = (v: unknown, fallback: WebhookMethod = "POST"): WebhookMethod => { if (v === undefined || v === null || v === "") return fallback; const m = String(v).trim().toUpperCase(); if (m !== "GET" && m !== "POST") throw new ServiceError("bad_method", "The webhook method must be GET or POST"); return m; };
+interface HookRaw { id: string; name: string; display_name?: string; url: string; description: string; group_ids: string; enabled: number; method?: string }
+const hook = (r: HookRaw): Webhook => ({ id: r.id, name: r.name, display_name: r.display_name ?? "", url: r.url, description: r.description, group_ids: list(r.group_ids), enabled: r.enabled === 1, method: r.method === "GET" ? "GET" : "POST" });
 
 export function listWebhooks(): Webhook[] {
   return (getDb().prepare("SELECT * FROM n8n_webhooks ORDER BY name").all() as unknown as HookRaw[]).map(hook).map((w) => ({ ...w, url: maskUrl(w.url), hasHeader: readSecret(`n8n-hook-${w.id}.header`) !== null }));
@@ -76,19 +79,22 @@ export function saveWebhook(actorId: string, input: Record<string, unknown>, id?
   const enabled = input.enabled === undefined ? (cur ? cur.enabled === 1 : true) : input.enabled !== false;
   const description = String(input.description ?? cur?.description ?? "").slice(0, 300);
   const displayName = String(input.display_name ?? cur?.display_name ?? "").trim().slice(0, 40);
+  const method = cleanMethod(input.method, cur?.method === "GET" ? "GET" : "POST");
   const dup = db.prepare("SELECT id FROM n8n_webhooks WHERE name=? AND id<>?").get(name, id ?? "");
   if (dup) throw new ServiceError("exists", "A webhook with this name exists", 409);
   const rowId = id ?? `h${randomUUID().replace(/-/g, "").slice(0, 12)}`;
-  if (cur) db.prepare("UPDATE n8n_webhooks SET name=?,display_name=?,url=?,description=?,group_ids=?,enabled=? WHERE id=?").run(name, displayName, url, description, JSON.stringify(groups), enabled ? 1 : 0, rowId);
-  else db.prepare("INSERT INTO n8n_webhooks (id,name,display_name,url,description,group_ids,enabled,created_at) VALUES (?,?,?,?,?,?,?,?)").run(rowId, name, displayName, url, description, JSON.stringify(groups), enabled ? 1 : 0, Date.now());
+  if (cur) db.prepare("UPDATE n8n_webhooks SET name=?,display_name=?,url=?,description=?,group_ids=?,enabled=?,method=? WHERE id=?").run(name, displayName, url, description, JSON.stringify(groups), enabled ? 1 : 0, method, rowId);
+  else db.prepare("INSERT INTO n8n_webhooks (id,name,display_name,url,description,group_ids,enabled,created_at,method) VALUES (?,?,?,?,?,?,?,?,?)").run(rowId, name, displayName, url, description, JSON.stringify(groups), enabled ? 1 : 0, Date.now(), method);
   // An optional secret header such as "X-Portal-Test-Key: value", kept in a private file and never returned.
   if (typeof input.header === "string" && input.header.trim()) {
     if (!/^[A-Za-z0-9-]{1,64}:\s*\S.*$/.test(input.header.trim())) throw new ServiceError("bad_header", 'The header must look like "Name: value"');
     writeSecret(`n8n-hook-${rowId}.header`, input.header.trim());
   }
-  writeAudit(cur ? "n8n.webhook_update" : "n8n.webhook_create", actorId, { webhookId: rowId, name, groups: groups.length, headerChanged: typeof input.header === "string" && !!input.header.trim() });
+  writeAudit(cur ? "n8n.webhook_update" : "n8n.webhook_create", actorId, { webhookId: rowId, name, method, groups: groups.length, headerChanged: typeof input.header === "string" && !!input.header.trim() });
   return { id: rowId };
 }
+/** The method a call just proved right (n8n answered "not registered for POST ... did you mean GET"): remembered so the next call is right the first time. */
+export function rememberMethod(id: string, method: WebhookMethod): void { getDb().prepare("UPDATE n8n_webhooks SET method=? WHERE id=?").run(method, id); }
 export function deleteWebhook(actorId: string, id: string): void {
   if (getDb().prepare("DELETE FROM n8n_webhooks WHERE id=?").run(id).changes === 0) throw new ServiceError("not_found", "No such webhook", 404);
   writeAudit("n8n.webhook_delete", actorId, { webhookId: id });

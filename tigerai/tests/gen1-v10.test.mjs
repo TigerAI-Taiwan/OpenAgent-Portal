@@ -22,10 +22,10 @@ const v1 = await import("../provider/v1.ts");
 const admin = await import("../provider/admin.ts");
 const logic = await import("../ui/truncation-logic.ts");
 
-test("default max output is 32768, never more than half the context", () => {
-  assert.equal(st.defaultLimits().maxTokens, 32768);
+test("default max output is 40000, never more than half the context", () => {
+  assert.equal(st.defaultLimits().maxTokens, 40000);
   assert.deepEqual(st.effectiveLimits({ contextWindow: 64512, maxTokens: null }), { contextWindow: 64512, maxTokens: 32256 });
-  assert.equal(st.effectiveLimits({ contextWindow: 131072, maxTokens: null }).maxTokens, 32768);
+  assert.equal(st.effectiveLimits({ contextWindow: 131072, maxTokens: null }).maxTokens, 40000);
   assert.equal(st.effectiveLimits(undefined).maxTokens, 16384, "no report at all: 32768 context -> half of it");
   assert.equal(st.effectiveLimits({ contextWindow: 64512, maxTokens: 8000 }).maxTokens, 8000, "gateway value wins over the default");
   assert.equal(st.effectiveLimits({ contextWindow: 64512, maxTokens: 8000 }, { maxTokens: 500 }).maxTokens, 500, "admin override wins over everything");
@@ -62,7 +62,7 @@ test("provisioning writes input per model, a stale 16384 is replaced, the admin 
     assert.deepEqual(models["vision"].input, ["text", "image"]);
     assert.ok(!models["bge-embedding-m3"], "embedding models stay excluded");
     assert.equal(models["no-report"].maxTokens, 32256);
-    assert.equal(models["text-only"].maxTokens, 32768);
+    assert.equal(models["text-only"].maxTokens, 40000);
     // admin turns pictures off for one model and on for another; stored like the other overrides
     const actor = "admin-1";
     const acc = await import("../accounts/service.ts");

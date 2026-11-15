@@ -12,14 +12,14 @@ import { DisabledComposer } from "./ComposerState";
 import { ConfirmDialog, Dialog, Icon, Select, TG_CSS, anchorOf, api, useConfirm, useOutsideClose } from "./kit";
 import { useMe } from "./me";
 import { adoptAnchor, clearFocusSeq, clearRoomOnly, closeRoom, markRoomRead, openRoom, refreshRooms, useUi } from "./store";
-import { WizardCard, WizardSettings, type WItem, type WRun } from "./Wizards";
+import { AnalysisDialog, WizardCard, WizardSettings, type WItem, type WRun } from "./Wizards";
 import { mt } from "../wizards/meeting/ui/texts";
 import MeetingModal from "../wizards/meeting/ui/MeetingModal";
 
 type Msg = { seq: number; author_id: string; author: string; text: string; ts: number; kind?: string };
 type Member = { id: string; name: string };
 type Info = {
-  room: { id: string; name: string; owner_id: string };
+  room: { id: string; name: string; owner_id: string; unit_id?: string | null; is_unit_default?: number };
   members: Member[]; messages: Msg[]; ai?: { busy: boolean; queued: number };
   isMember: boolean; canPost: boolean; canJoin: boolean; closed: boolean; deleted: boolean; myRole: string;
   can: { warn: boolean; close: boolean; reopen: boolean; delete: boolean; manageMembers: boolean; wizards?: boolean };
@@ -68,7 +68,7 @@ function Room({ id }: { id: string }) {
   const [error, setError] = useState("");
   const [bots, setBots] = useState<Member[]>([{ id: "ai", name: "AI" }]);
   const [menu, setMenu] = useState(false);
-  const [dlg, setDlg] = useState<null | "members" | "warn" | "close" | "delete" | "wizards" | "meeting">(null);
+  const [dlg, setDlg] = useState<null | "members" | "warn" | "close" | "delete" | "wizards" | "analysis" | "meeting" | "unit">(null);
   const focusSeq = useUi().focusSeq;
   const last = useRef(0);
   const busy = useRef(false);
@@ -141,7 +141,9 @@ function Room({ id }: { id: string }) {
   const items: { id: string; label: string; show: boolean; run: () => void }[] = [
     { id: "members", label: tr("roomMembers"), show: true, run: () => setDlg("members") },
     { id: "wizards", label: tr("wizSettings"), show: info.can.wizards === true && !info.closed, run: () => setDlg("wizards") },
+    { id: "analysis", label: tr("wizAnalysisTitle"), show: !info.closed && !info.deleted && (info.isMember || info.can.wizards === true), run: () => setDlg("analysis") },
     { id: "meeting", label: mt("roomMenu"), show: info.isMember && !info.closed && !info.deleted, run: () => setDlg("meeting") },
+    { id: "unit", label: tr("roomUnit"), show: info.can.manageMembers, run: () => setDlg("unit") },
     { id: "warn", label: tr("warn"), show: info.can.warn, run: () => setDlg("warn") },
     { id: "close", label: info.closed ? tr("reopenRoom") : tr("closeRoom"), show: info.closed ? info.can.reopen : info.can.close, run: () => { if (info.closed) void act("/reopen"); else setDlg("close"); } },
     { id: "delete", label: tr("deleteRoom"), show: info.can.delete, run: () => setDlg("delete") },
@@ -208,7 +210,9 @@ function Room({ id }: { id: string }) {
       {composer}
       {dlg === "members" && <MembersDialog info={info} onClose={() => setDlg(null)} onChanged={() => { last.current = 0; setMsgs([]); void poll(); }} />}
       {dlg === "wizards" && <WizardSettings roomId={id} roomName={info.room.name} onClose={() => setDlg(null)} />}
+      {dlg === "analysis" && <AnalysisDialog roomId={id} manager={info.can.wizards === true} onClose={() => setDlg(null)} onStarted={() => { kick.current = true; void poll(); }} />}
       {dlg === "meeting" && <MeetingModal roomId={id} onClose={() => setDlg(null)} />}
+      {dlg === "unit" && <RoomUnitDialog roomId={id} unitId={info.room.unit_id ?? ""} isDefault={info.room.is_unit_default === 1} isAdmin={me?.role === "admin"} onClose={() => setDlg(null)} onSaved={() => { setDlg(null); void poll(); }} />}
       {dlg === "warn" && <WarnDialog onClose={() => setDlg(null)} onSend={async (text) => { if (await act("/warn", "POST", { text })) setDlg(null); }} />}
       {dlg === "close" && <ConfirmDialog text={tr("cfCloseRoom")} confirmLabel={tr("closeRoom")} onClose={() => setDlg(null)} onConfirm={() => { setDlg(null); void act("/close"); }} />}
       {dlg === "delete" && <ConfirmDialog text={tr("deleteConfirm")} confirmLabel={tr("deleteRoom")} onClose={() => setDlg(null)} onConfirm={async () => { setDlg(null); const r = await api(`rooms/${id}`, "DELETE"); if (r.ok) { await refreshRooms(); closeRoom(); } else setError(r.data.error ?? tr("error")); }} />}
@@ -281,6 +285,27 @@ function MembersDialog({ info, onClose, onChanged }: { info: Info; onClose: () =
     </Dialog>
     {dialog}
   </>);
+}
+
+/** File a channel under a unit (the directory shows it there) or under none = 跨部門頻道. Display only: it changes who can open nothing. */
+function RoomUnitDialog({ roomId, unitId, isDefault, isAdmin, onClose, onSaved }: { roomId: string; unitId: string; isDefault: boolean; isAdmin: boolean; onClose: () => void; onSaved: () => void }) {
+  const [units, setUnits] = useState<{ id: string; path: string }[]>([]);
+  const [unit, setUnit] = useState(unitId);
+  const [dflt, setDflt] = useState(isDefault);
+  const [error, setError] = useState("");
+  useEffect(() => { void api<{ units: { id: string; path: string }[] }>("units").then((r) => { if (r.ok) setUnits(r.data.units); }); }, []);
+  return (
+    <Dialog title={tr("roomUnit")} onClose={onClose}>
+      <p className="tgx-muted" style={{ marginTop: 0 }}>{tr("roomUnitHint")}</p>
+      {error && <div className="tgx-err" role="alert">{error}</div>}
+      <Select ariaLabel={tr("roomUnit")} width={280} value={unit} onChange={setUnit} options={[{ value: "", label: tr("roomUnitNone") }, ...units.map((u) => ({ value: u.id, label: u.path }))]} />
+      {isAdmin && unit && <label style={{ display: "flex", gap: 6, marginTop: 10 }}><input type="checkbox" checked={dflt} onChange={(e) => setDflt(e.target.checked)} />{tr("roomUnitDefault")}</label>}
+      <div className="tgx-actions">
+        <button className="tgx-btn" onClick={onClose}>{tr("cancel")}</button>
+        <button className="tgx-btn primary" data-room-unit-save onClick={async () => { const r = await api(`rooms/${roomId}`, "PATCH", { unitId: unit || null, isDefault: !!unit && dflt }); if (r.ok) onSaved(); else setError(r.data.error ?? tr("error")); }}>{tr("roomUnitSave")}</button>
+      </div>
+    </Dialog>
+  );
 }
 
 function WarnDialog({ onClose, onSend }: { onClose: () => void; onSend: (text: string) => void }) {

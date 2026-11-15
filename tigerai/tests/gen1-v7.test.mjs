@@ -128,7 +128,10 @@ test("item 2: a forced password change shows its own form instead of redirecting
 test("item 4: every destructive click in the app asks first", () => {
   const app = read("tigerai/pages/TgApp.tsx");
   for (const m of app.matchAll(/^.*"DELETE".*$/gm)) assert.match(m[0], /ask\(|const run = /, `no confirm around: ${m[0].trim().slice(0, 90)}`);
-  for (const frag of ["cfDisableUser", "reset(u)", 'decide(o.id, true)', 'decide(o.id, false)', 'send(true)', 'member(g.id, m.user_id, false)']) {
+  // 停用 became the 離職 dialog (it lists what is handed over and asks before it does anything); the org sheet's apply asks in OrgPanel.
+  assert.match(app, /setLeaving\(u\)/);
+  assert.match(read("tigerai/ui/OrgPanel.tsx"), /ask\(tr\("orgApplyAsk"\)/);
+  for (const frag of ["reset(u)", 'decide(o.id, true)', 'decide(o.id, false)', 'member(g.id, m.user_id, false)']) {
     const line = app.split("\n").find((l) => l.includes(frag));
     assert.ok(line && /ask\(/.test(line), `confirm for ${frag}`);
   }

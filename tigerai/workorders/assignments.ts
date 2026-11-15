@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { getDb } from "../db/store";
 import { writeAudit } from "../accounts/audit";
 import { ServiceError, userById } from "../accounts/service";
-import { canAccessSession } from "../rooms/ownership";
+import { canAccessSession, isRoomMember } from "../rooms/ownership";
 import { getAgent } from "../agents/service";
 import { startable } from "../agents/personal";
 
@@ -27,9 +27,22 @@ export interface AssignmentRow {
   assigneeKind: "user" | "ai"; agentId: string | null; agentName: string | null;
   /** AI orders only: 'running' (進行中) or 'review' (待確認: the AI stopped, the applicant decides). The status column stays 'accepted' for both. */
   runState: "running" | "review" | null; runStartedAt: number | null; aiResult: string | null; aiNote: string | null; runCount: number;
+  /** AI orders only: the channel the order was made from. The AI is handed that channel's recent messages (read-only, workorders/channel-context.ts). */
+  roomId: string | null;
 }
 /** Who made it: a person, an AI role, or an n8n flow. Only server code sets anything but 'person' (never the request body). */
 export type AssignmentSource = "person" | "ai" | "n8n";
+
+/**
+ * What the API calls the state. The status column of an AI order stays 'accepted' while the AI works AND while it waits for the applicant
+ * (run_state tells the two apart), so the raw value made the API say "accepted" for an order the page shows as 待確認. Outside this
+ * module an AI order that has a run state reads 'running' (進行中) or 'review' (待確認); everything else is the column as it is.
+ */
+export type ApiStatus = AssignmentRow["status"] | "running" | "review";
+export function apiStatus(a: Pick<AssignmentRow, "status" | "assigneeKind" | "runState">): ApiStatus {
+  return a.assigneeKind === "ai" && a.status === "accepted" && a.runState ? a.runState : a.status;
+}
+export function apiAssignment<T extends Pick<AssignmentRow, "status" | "assigneeKind" | "runState">>(a: T): Omit<T, "status"> & { status: ApiStatus } { return { ...a, status: apiStatus(a) }; }
 
 export const ASSIGNMENT_SELECT = `SELECT a.id, a.title, a.description, a.applicant_id AS applicantId, COALESCE(ua.name,'?') AS applicantName,
   a.assignee_id AS assigneeId, COALESCE(us.name,'?') AS assigneeName, a.due_date AS dueDate, a.session_id AS sessionId,
@@ -37,7 +50,7 @@ export const ASSIGNMENT_SELECT = `SELECT a.id, a.title, a.description, a.applica
   a.accepted_at AS acceptedAt, a.finished_at AS finishedAt, a.source AS source,
   a.assignee_kind AS assigneeKind, a.agent_id AS agentId,
   COALESCE((SELECT name FROM agents WHERE id=a.agent_id),(SELECT name FROM personal_agents WHERE id=a.agent_id)) AS agentName,
-  a.run_state AS runState, a.run_started_at AS runStartedAt, a.ai_result AS aiResult, a.ai_note AS aiNote, a.run_count AS runCount
+  a.run_state AS runState, a.run_started_at AS runStartedAt, a.ai_result AS aiResult, a.ai_note AS aiNote, a.run_count AS runCount, a.room_id AS roomId
   FROM assignments a LEFT JOIN users ua ON ua.id=a.applicant_id LEFT JOIN users us ON us.id=a.assignee_id`;
 
 /** A due DAY is stored as noon UTC of that calendar day: in every time zone from UTC-11 to UTC+11 it still reads as the same
@@ -63,7 +76,7 @@ export function requireVisible(actor: Actor, id: string): AssignmentRow {
   return a;
 }
 
-export function createAssignment(actor: Actor, input: { title?: unknown; description?: unknown; assigneeId?: unknown; dueDate?: unknown; sessionId?: unknown; assigneeKind?: unknown; agentId?: unknown }, source: AssignmentSource = "person"): AssignmentRow {
+export function createAssignment(actor: Actor, input: { title?: unknown; description?: unknown; assigneeId?: unknown; dueDate?: unknown; sessionId?: unknown; assigneeKind?: unknown; agentId?: unknown; roomId?: unknown }, source: AssignmentSource = "person"): AssignmentRow {
   const title = String(input.title ?? "").trim();
   const description = String(input.description ?? "").trim();
   if (!title || title.length > 120) throw new ServiceError("bad_title", "Title is required (max 120 characters)");
@@ -74,6 +87,7 @@ export function createAssignment(actor: Actor, input: { title?: unknown; descrip
   if (input.assigneeKind !== undefined && input.assigneeKind !== "user" && input.assigneeKind !== "ai") throw new ServiceError("bad_assignee", "Unknown assignee kind");
   let assigneeId: string;
   let agentId: string | null = null;
+  let roomId: string | null = null;
   if (toAi) {
     const wanted = typeof input.agentId === "string" ? input.agentId.trim() : "";
     if (wanted && wanted !== "general") {
@@ -83,6 +97,13 @@ export function createAssignment(actor: Actor, input: { title?: unknown; descrip
       agentId = wanted;
     }
     assigneeId = `ai:${agentId ?? "general"}`;
+    // Made from a channel: only a member may hand a channel's messages to the AI (an administrator who is not a member may not either).
+    if (typeof input.roomId === "string" && input.roomId.trim()) {
+      const rid = input.roomId.trim();
+      const room = getDb().prepare("SELECT deleted_at FROM rooms WHERE id=?").get(rid) as { deleted_at: number | null } | undefined;
+      if (!room || room.deleted_at || !isRoomMember(rid, actor.id)) throw new ServiceError("bad_room", "That channel is not available to you", 403);
+      roomId = rid;
+    }
   } else {
     const assignee = typeof input.assigneeId === "string" ? userById(input.assigneeId) : null;
     if (!assignee || assignee.status !== "active") throw new ServiceError("bad_assignee", "Choose an active user to hand this to");
@@ -98,9 +119,9 @@ export function createAssignment(actor: Actor, input: { title?: unknown; descrip
   const id = `a${randomUUID().replace(/-/g, "").slice(0, 12)}`;
   const now = Date.now();
   if (toAi) {
-    getDb().prepare("INSERT INTO assignments (id,title,description,applicant_id,assignee_id,due_date,session_id,created_at,updated_at,source,assignee_kind,agent_id,status,run_state,accepted_at) VALUES (?,?,?,?,?,?,?,?,?,?,'ai',?,'accepted','running',?)")
-      .run(id, title, description, actor.id, assigneeId, due, null, now, now, source, agentId, now);
-    writeAudit("assignment.create", actor.id, { assignmentId: id, assigneeKind: "ai", agentId: agentId ?? "general" });
+    getDb().prepare("INSERT INTO assignments (id,title,description,applicant_id,assignee_id,due_date,session_id,created_at,updated_at,source,assignee_kind,agent_id,status,run_state,accepted_at,room_id) VALUES (?,?,?,?,?,?,?,?,?,?,'ai',?,'accepted','running',?,?)")
+      .run(id, title, description, actor.id, assigneeId, due, null, now, now, source, agentId, now, roomId);
+    writeAudit("assignment.create", actor.id, { assignmentId: id, assigneeKind: "ai", agentId: agentId ?? "general", ...(roomId ? { roomId } : {}) });
   } else {
     getDb().prepare("INSERT INTO assignments (id,title,description,applicant_id,assignee_id,due_date,session_id,created_at,updated_at,source) VALUES (?,?,?,?,?,?,?,?,?,?)")
       .run(id, title, description, actor.id, assigneeId, due, sessionId, now, now, source);
@@ -121,7 +142,9 @@ export function listAssignments(actor: Actor, scope: string, status?: string, so
   } else if (scope === "ai") { where = "(a.assignee_id=? OR a.applicant_id=?) AND a.source IN ('ai','n8n')"; args.push(actor.id, actor.id); }
   else if (scope === "assigned") { where = "a.assignee_id=?"; args.push(actor.id); }
   else { where = "a.applicant_id=?"; args.push(actor.id); }
-  if (status) { where += " AND a.status=?"; args.push(status); }
+  if (status === "running" || status === "review") { where += " AND a.assignee_kind='ai' AND a.status='accepted' AND a.run_state=?"; args.push(status); }
+  else if (status === "accepted") where += " AND a.status='accepted' AND a.run_state IS NULL";
+  else if (status) { where += " AND a.status=?"; args.push(status); }
   if (source && scope !== "ai") {
     if (!["person", "ai", "n8n"].includes(source)) throw new ServiceError("bad_source", "Unknown source");
     where += " AND a.source=?"; args.push(source);
@@ -168,8 +191,15 @@ function step(actor: Actor, id: string, from: string[], to: AssignmentRow["statu
 }
 
 export const acceptAssignment = (actor: Actor, id: string) => step(actor, id, ["open"], "accepted", "assignment.accept", { accepted_at: Date.now() });
-export const completeAssignment = (actor: Actor, id: string, note = "") =>
-  step(actor, id, ["open", "accepted"], "done", "assignment.complete", { finished_at: Date.now(), done_note: String(note ?? "").trim().slice(0, 500) || null });
+export function completeAssignment(actor: Actor, id: string, note = ""): AssignmentRow {
+  const a = step(actor, id, ["open", "accepted"], "done", "assignment.complete", { finished_at: Date.now(), done_note: String(note ?? "").trim().slice(0, 500) || null });
+  // A 「確認」 交辦單 (wizards/confirm-order.ts) is the same act as 確認 on the channel card: finishing it confirms the draft. Inline SQL: wizards import this module.
+  const run = getDb().prepare("SELECT id, kind, room_id FROM wizard_runs WHERE confirm_assignment_id=? AND confirm_state='draft'").get(id) as { id: string; kind: string; room_id: string | null } | undefined;
+  if (run && getDb().prepare("UPDATE wizard_runs SET confirm_state='confirmed', confirmed_by=?, confirmed_at=? WHERE id=? AND confirm_state='draft'").run(actor.id, Date.now(), run.id).changes) {
+    writeAudit("wizard.confirm", actor.id, { runId: run.id, kind: run.kind, roomId: run.room_id, via: "assignment" });
+  }
+  return a;
+}
 export function returnAssignment(actor: Actor, id: string, reason: unknown): AssignmentRow {
   const r = String(reason ?? "").trim();
   if (!r) throw new ServiceError("reason_required", "A reason is required when returning a work order");

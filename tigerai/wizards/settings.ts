@@ -8,26 +8,38 @@ import type { Aspect } from "./format";
 
 /**
  * Per-channel wizard settings. Three scheduled wizards (每日摘要 / 週報 / SKILL 建議), each switch + time (+ weekday), and the five
- * aspects. Defaults follow the spec: every wizard is OFF until someone who may manage the channel turns it on; once a wizard runs,
- * 記錄 and 建議 are on and 監督, 稽核, 提醒 are off (they are private and only a head or an administrator opts into them).
+ * aspects (per wizard). Every wizard is OFF until someone who may manage the channel turns it on; once it runs, its aspects follow
+ * ASPECT_DEFAULTS (daily: 記錄 + 提醒; weekly: all five), and 監督, 稽核, 提醒 stay private whatever is ticked.
  *
  * Who may change anything here, run a wizard now, or press 確認 / 採用 / 不需要 on a channel result: the channel's creator, a head of
  * a department that has a member in the channel, and an administrator. Nobody else, including other members of the channel.
  */
 
 export type Wizard = "daily" | "weekly" | "skill";
+/** The two wizards that have their own five aspect switches. */
+export type AspectKind = "daily" | "weekly";
+export const ASPECT_KINDS: AspectKind[] = ["daily", "weekly"];
 export const SCHEDULED: Wizard[] = ["daily", "weekly", "skill"];
-export const WIZARD_ZH: Record<Wizard | "meeting", string> = { daily: "每日摘要", weekly: "週報", skill: "SKILL 建議", meeting: "會議摘要" };
+export const WIZARD_ZH: Record<Wizard | "meeting" | "adhoc", string> = { daily: "每日摘要", weekly: "工作週報", skill: "SKILL 建議", meeting: "會議摘要", adhoc: "訊息分析" };
 
 export interface WizardSetting { enabled: boolean; at: string; /** ISO weekday 1..7; null for a daily wizard */ weekday: number | null }
-export interface RoomWizardSettings { daily: WizardSetting; weekly: WizardSetting; skill: WizardSetting; aspects: Record<Aspect, boolean> }
+export interface RoomWizardSettings { daily: WizardSetting; weekly: WizardSetting; skill: WizardSetting; aspects: Record<AspectKind, Record<Aspect, boolean>> }
 
 const DEFAULTS: Record<Wizard, WizardSetting> = {
   daily: { enabled: false, at: "18:00", weekday: null },
   weekly: { enabled: false, at: "17:00", weekday: 5 },
   skill: { enabled: false, at: "17:30", weekday: 5 },
 };
-export const ASPECT_DEFAULTS: Record<Aspect, boolean> = { record: true, suggest: true, supervise: false, audit: false, remind: false };
+/**
+ * 建議預設 (the recommended defaults), per wizard. Each wizard keeps all five switches; only what is ticked at the start differs:
+ * the daily summary is short and frequent (記錄 + 提醒: fatigue, data volume and the load on a local model), the weekly report is the
+ * full look (all five). A creator, head or administrator can tick or untick any of them; 「回到建議預設」 puts these back.
+ */
+export const ASPECT_DEFAULTS: Record<AspectKind, Record<Aspect, boolean>> = {
+  daily: { record: true, suggest: false, supervise: false, audit: false, remind: true },
+  weekly: { record: true, suggest: true, supervise: true, audit: true, remind: true },
+};
+const ALL_ASPECTS = Object.keys(ASPECT_DEFAULTS.daily) as Aspect[];
 
 type Actor = { id: string; role: Role };
 interface Row { key: string; enabled: number; at_time: string | null; weekday: number | null }
@@ -50,8 +62,9 @@ export function getSettings(roomId: string): RoomWizardSettings {
     const d = DEFAULTS[w];
     return r ? { enabled: r.enabled === 1, at: r.at_time && parseHm(r.at_time) !== null ? r.at_time : d.at, weekday: d.weekday === null ? null : (r.weekday ?? d.weekday) } : { ...d };
   };
-  const aspects = { ...ASPECT_DEFAULTS };
-  for (const a of Object.keys(aspects) as Aspect[]) { const r = by.get(`aspect:${a}`); if (r) aspects[a] = r.enabled === 1; }
+  // Per wizard keys `aspect:<wizard>:<aspect>`; a channel saved before 1.1.0 has the old shared `aspect:<aspect>` rows, which stay in force for both until it is changed.
+  const aspects = { daily: { ...ASPECT_DEFAULTS.daily }, weekly: { ...ASPECT_DEFAULTS.weekly } };
+  for (const k of ASPECT_KINDS) for (const a of ALL_ASPECTS) { const r = by.get(`aspect:${k}:${a}`) ?? by.get(`aspect:${a}`); if (r) aspects[k][a] = r.enabled === 1; }
   return { daily: one("daily"), weekly: one("weekly"), skill: one("skill"), aspects };
 }
 
@@ -86,12 +99,28 @@ export function saveSettings(actor: Actor, roomId: string, input: Record<string,
     put(w, next.enabled, next.at, next.weekday);
     changed.push(`${w}:${next.enabled ? "on" : "off"}@${next.at}`);
   }
+  if (input.reset !== undefined) {
+    const list = Array.isArray(input.reset) ? input.reset : [input.reset];
+    for (const k of list) {
+      if (!ASPECT_KINDS.includes(k as AspectKind)) throw new ServiceError("bad_settings", "Unknown wizard");
+      // Both the per wizard rows and the old shared ones go, so the recommended defaults really apply again.
+      for (const a of ALL_ASPECTS) db.prepare("DELETE FROM wizard_settings WHERE room_id=? AND key IN (?,?)").run(roomId, `aspect:${k}:${a}`, `aspect:${a}`);
+      changed.push(`${k}:reset`);
+    }
+  }
   if (input.aspects !== undefined) {
     if (!input.aspects || typeof input.aspects !== "object") throw new ServiceError("bad_settings", "Settings must be an object");
-    for (const [a, v] of Object.entries(input.aspects as Record<string, unknown>)) {
-      if (!(a in ASPECT_DEFAULTS)) throw new ServiceError("bad_settings", "Unknown aspect");
-      put(`aspect:${a}`, v === true, null, null);
-      changed.push(`${a}:${v === true ? "on" : "off"}`);
+    const entries = Object.entries(input.aspects as Record<string, unknown>);
+    const one = (k: AspectKind, a: string, v: unknown) => {
+      if (!ALL_ASPECTS.includes(a as Aspect)) throw new ServiceError("bad_settings", "Unknown aspect");
+      put(`aspect:${k}:${a}`, v === true, null, null);
+      changed.push(`${k}.${a}:${v === true ? "on" : "off"}`);
+    };
+    for (const [key, v] of entries) {
+      if (ASPECT_KINDS.includes(key as AspectKind)) {
+        if (!v || typeof v !== "object") throw new ServiceError("bad_settings", "Settings must be an object");
+        for (const [a, on] of Object.entries(v as Record<string, unknown>)) one(key as AspectKind, a, on);
+      } else for (const k of ASPECT_KINDS) one(k, key, v); // the old flat form {record: true}: both wizards
     }
   }
   if (changed.length) writeAudit("wizard.settings", actor.id, { roomId, changed: changed.join(",") });

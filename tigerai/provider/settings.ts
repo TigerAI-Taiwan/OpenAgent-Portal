@@ -28,6 +28,8 @@ export interface ModelSettings {
   offered?: string[] | null;
   defaultModel?: string | null;
   overrides?: Record<string, ModelOverride>;
+  /** The two administrator switches for personal connections (see personal.ts). Absent = both on. */
+  personal?: { allow?: boolean; publicWithoutKey?: boolean; mutualFallback?: boolean };
 }
 
 const settingsFile = () => join(dataDir(), "models-settings.json");
@@ -145,9 +147,9 @@ export function defaultLimits(): { contextWindow: number; maxTokens: number } {
   return {
     // Only used when the gateway publishes no size at all (and no override exists).
     contextWindow: Number(process.env.TIGERAI_V1_CONTEXT_WINDOW) || 32768,
-    // Reasoning models spend part of max_tokens thinking (16384 was cut off mid-thought in practice): the default is 32768,
+    // Reasoning models spend part of max_tokens thinking (16384 was cut off mid-thought in practice): the default is 40000,
     // never more than half the context (effectiveLimits). Keep it well above a few hundred or the answer comes back empty.
-    maxTokens: Math.max(400, Number(process.env.TIGERAI_V1_MAX_TOKENS) || 32768),
+    maxTokens: Math.max(400, Number(process.env.TIGERAI_V1_MAX_TOKENS) || 40000),
   };
 }
 

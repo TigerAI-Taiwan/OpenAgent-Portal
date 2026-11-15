@@ -19,7 +19,7 @@ const { gate, terminalClosed } = await import("../adapter/gate.ts");
 const mk = (email, role) => acc.createUser(null, { email, name: role === "admin" ? "Admin" : "Member", role, password: "Test-Pass-12345!", mustChange: false }).user;
 const admin = mk("admin@example.com", "admin");
 const member = mk("m@example.com", "member");
-const ask = (u, method, path) => gate(new NextRequest(`http://127.0.0.1:30141${path}`, { method, headers: { cookie: `${ses.SESSION_COOKIE}=${ses.createSessionCookie(u.id, u.token_version)}` } }), false);
+const ask = (u, method, path) => gate(new NextRequest(`http://127.0.0.1:30161${path}`, { method, headers: { cookie: `${ses.SESSION_COOKIE}=${ses.createSessionCookie(u.id, u.token_version)}` } }), false);
 
 test("terminal API: 403 for admin and member on /api/terminal and below", async () => {
   for (const u of [admin, member]) {

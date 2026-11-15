@@ -1,0 +1,36 @@
+// SPDX-License-Identifier: LicenseRef-TigerAI-SUL-Draft
+// Texts of 上網查資料 and 文件轉檔服務 (community edition). Its own file so the big tables in i18n.ts stay untouched.
+export const zhWeb = {
+  tabWeb: "上網查資料",
+  wbTitle: "上網查資料",
+  wbHelp: "讓 AI 在對話與頻道 @AI 時上網搜尋、讀取網頁,並附上來源連結。預設關閉;只有勾選的班級(群組)和管理員能用。AI 讀到的網頁文字只當資料,不會當成指令。",
+  wbEnabled: "開啟上網查資料", wbEnabledDesc: "關閉時 AI 的搜尋與讀網頁工具一律拒絕,正在進行的對話也立刻生效。",
+  wbProvider: "搜尋服務", wbSearx: "SearXNG(自己架設,不需金鑰)", wbBrave: "Brave Search(需要 API 金鑰)", wbTavily: "Tavily(需要 API 金鑰)",
+  wbUrl: "SearXNG 位址", wbUrlPh: "例如 http://searxng:8080(內部位址可以)",
+  wbKey: "API 金鑰", wbKeyHas: "已設定(末四碼 {last4}),不改請留空", wbKeyNone: "貼上金鑰;只存在伺服器,畫面不再顯示",
+  wbKeyClear: "清除金鑰",
+  wbTest: "測試", wbTestOk: "搜尋正常:範例查詢回了 {n} 筆結果({ms} ms)", wbTestFail: "搜尋失敗",
+  wbGroups: "哪些班級 / 群組可以使用", wbGroupsHelp: "沒勾選任何群組 = 只有管理員能用。只算直接成員,不往上下層繼承。", wbGroupsNone: "還沒有群組。",
+  wbSave: "儲存", wbSaved: "已儲存",
+  wbSafety: "AI 讀網頁時,內部網路、本機與雲端中繼資料位址一律拒絕;每人每分鐘有次數上限;稽核紀錄只記搜尋字詞與網址、使用者與頻道,不記網頁內容。",
+  cvTitle: "文件轉檔服務", cvHelp: "AI 做投影片時,先做成可編輯的 .pptx,再交給這個服務轉成 PDF。服務是另外一個容器(Gotenberg),不在 Portal 映像裡。沒設定時,AI 只會給 .pptx 並說明 PDF 尚未啟用。",
+  cvUrl: "轉檔服務位址", cvUrlPh: "例如 http://gotenberg:3000",
+  cvTest: "測試", cvTestOk: "轉檔正常:一頁中文測試投影片已轉成 PDF({bytes} 位元組,{ms} ms)", cvTestFail: "轉檔失敗",
+};
+export const enWeb: Record<keyof typeof zhWeb, string> = {
+  tabWeb: "Web research",
+  wbTitle: "Web research",
+  wbHelp: "Lets the AI search the web and read pages in conversations and channel @AI, with source links. Off by default; only the ticked classes (groups) and administrators can use it. Page text the AI reads is treated as data, never as instructions.",
+  wbEnabled: "Turn web research on", wbEnabledDesc: "While off, the AI's search and page tools refuse, in running conversations too.",
+  wbProvider: "Search service", wbSearx: "SearXNG (self-hosted, no key)", wbBrave: "Brave Search (API key)", wbTavily: "Tavily (API key)",
+  wbUrl: "SearXNG address", wbUrlPh: "e.g. http://searxng:8080 (an internal address is fine)",
+  wbKey: "API key", wbKeyHas: "Set (last 4: {last4}); leave empty to keep", wbKeyNone: "Paste the key; it stays on the server and is never shown again",
+  wbKeyClear: "Clear key",
+  wbTest: "Test", wbTestOk: "Search works: the sample query returned {n} results ({ms} ms)", wbTestFail: "Search failed",
+  wbGroups: "Which classes / groups may use it", wbGroupsHelp: "None ticked = administrators only. Direct members only, no inheritance up or down.", wbGroupsNone: "No groups yet.",
+  wbSave: "Save", wbSaved: "Saved",
+  wbSafety: "When the AI reads a page, internal networks, localhost and cloud metadata addresses are always refused; each person has a per-minute limit; the audit log keeps the query or URL, the person and the channel, never page contents.",
+  cvTitle: "Document conversion service", cvHelp: "When the AI makes slides it writes an editable .pptx and hands it to this service to convert to PDF. The service is a separate container (Gotenberg), not part of the Portal image. When not set, the AI delivers the .pptx only and says the PDF is not enabled.",
+  cvUrl: "Conversion service address", cvUrlPh: "e.g. http://gotenberg:3000",
+  cvTest: "Test", cvTestOk: "Conversion works: a one-slide Chinese test deck became a PDF ({bytes} bytes, {ms} ms)", cvTestFail: "Conversion failed",
+};

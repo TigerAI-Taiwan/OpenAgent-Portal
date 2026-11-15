@@ -92,5 +92,7 @@ export function addonSessionExtensions(ctx: { sessionId: string; cwd: string }):
   for (const m of activeAddons()) { try { out.push(...(m.sessionExtensions?.(ctx) ?? [])); } catch (e) { console.error(`[tigerai] add-on ${m.id} extension:`, e instanceof Error ? e.message : e); } }
   return out;
 }
+/** Connector templates contributed by active add-on packages (the community edition: none, so only n8n exists). */
+export const addonConnectorTemplates = () => activeAddons().flatMap((m) => m.connectorTemplates ?? []);
 export const addonAllowsMcpServer = (name: string): boolean => activeAddons().some((m) => m.allowsMcpServer?.(name) === true);
 export type { AddonMenus };

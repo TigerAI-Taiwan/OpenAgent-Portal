@@ -15,12 +15,13 @@ import { closePanel, useUi } from "./store";
 
 type Asg = {
   id: string; title: string; description: string; applicantId: string; applicantName: string; assigneeId: string; assigneeName: string; dueDate: number | null; sessionId: string | null;
-  status: "open" | "accepted" | "done" | "returned"; returnReason: string | null; doneNote: string | null; source: "person" | "ai" | "n8n";
+  status: "open" | "accepted" | "running" | "review" | "done" | "returned"; returnReason: string | null; doneNote: string | null; source: "person" | "ai" | "n8n";
   assigneeKind: "user" | "ai"; agentName: string | null; runState: "running" | "review" | null; aiResult: string | null; aiNote: string | null; runCount: number;
 };
 type Tab = "assigned" | "mine";
 type Kind = "all" | "user" | "ai";
-const statusKey = (a: Asg): Key => (a.assigneeKind === "ai" && a.status === "accepted" && a.runState ? (`asRun_${a.runState}` as Key) : (`asStatus_${a.status}` as Key));
+// The API says "running" / "review" for an AI order that has a run state (workorders/assignments.ts apiStatus).
+const statusKey = (a: Asg): Key => (a.status === "running" || a.status === "review" ? (`asRun_${a.status}` as Key) : (`asStatus_${a.status}` as Key));
 
 const CSS = `
 .tgas-tabs{display:flex;gap:6px;flex:none;align-items:center;flex-wrap:wrap}
@@ -29,6 +30,14 @@ const CSS = `
 .tgas-result{margin-top:8px;border-top:1px solid var(--border);padding-top:8px}
 .tgas-acts{margin-top:8px;display:flex;gap:6px;flex-wrap:wrap}
 `;
+
+/** 「確認」 交辦單 carry `/?settings=dir&node=…`: shown as a link that opens the file in the 目錄. */
+function withDirLink(text: string) {
+  const m = /(\/\?settings=dir&node=[^\s()（）]+)/.exec(text);
+  if (!m) return text;
+  const i = m.index;
+  return <>{text.slice(0, i)}<a href={m[1]} data-tg-dir-link>{tr("asOpenDir")}</a>{text.slice(i + m[1].length)}</>;
+}
 
 export default function AssignmentsModal() {
   const ui = useUi();
@@ -75,15 +84,15 @@ function List({ tab, kind, focus }: { tab: Tab; kind: Kind; focus: string | null
     {rows.length === 0 && <div className="tgx-muted">{tr("asNone")}</div>}
     {rows.map((a) => {
       const isAi = a.assigneeKind === "ai";
-      const active = a.status === "open" || a.status === "accepted";
+      const active = a.status === "open" || a.status === "accepted" || a.status === "running" || a.status === "review";
       const late = a.dueDate !== null && Math.floor(a.dueDate / 86_400_000) * 86_400_000 < today && active;
       const mineToDo = !isAi && active && a.assigneeId === me?.id;
-      const aiReview = isAi && a.status === "accepted" && a.runState === "review" && a.applicantId === me?.id;
+      const aiReview = isAi && a.status === "review" && a.applicantId === me?.id;
       const tag = a.source === "person" ? tr("asTagPerson") : a.source === "ai" ? tr("asTagAi") : tr("asTagN8n");
       return (
         <div className="tgx-card" key={a.id} data-tg-assignment={a.id} data-tg-state={isAi ? (a.runState ?? a.status) : a.status} style={{ marginBottom: 0, ...(focus === a.id ? { outline: "2px solid var(--accent, #3b82f6)" } : {}) }}>
           <div className="tgas-row"><strong>{a.title}</strong><span style={{ display: "flex", gap: 6 }}>{tab === "assigned" && <span className="tgx-badge" data-tg-tag={a.source}>{tag}</span>}<span className="tgx-badge">{tr(statusKey(a))}</span></span></div>
-          {a.description && <div style={{ whiteSpace: "pre-wrap", margin: "6px 0" }}>{a.description}</div>}
+          {a.description && <div style={{ whiteSpace: "pre-wrap", margin: "6px 0" }}>{withDirLink(a.description)}</div>}
           <div className="tgx-muted" style={{ fontSize: 12 }}>
             {tr("asBy")}: {a.applicantName} · {tr("asTo")}: {isAi ? `AI · ${a.agentName ?? tr("asGeneralAi")}` : a.assigneeName}
             {a.dueDate ? <> · <span className={late ? "tgas-over" : ""}><Icon name="calendar" size={11} /> {fmtDay(a.dueDate)}{late ? ` · ${tr("bOverdue")}` : ""}</span></> : null}

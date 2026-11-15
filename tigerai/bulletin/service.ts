@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: LicenseRef-TigerAI-SUL-Draft
+import { pendingRequests } from "../register/service";
 import { randomUUID } from "node:crypto";
 import { getDb } from "../db/store";
 import { writeAudit } from "../accounts/audit";
@@ -232,9 +233,11 @@ export function announcementDetail(actor: Actor, id: string, now = Date.now(), t
 export type Item =
   | { kind: "assignment"; id: string; title: string; due: number | null; overdue: boolean; createdAt: number; assignment: AssignmentRow }
   | { kind: "ack"; id: string; title: string; due: null; overdue: false; createdAt: number; announcement: AnnouncementView }
-  | { kind: "approval"; id: string; title: string; due: null; overdue: false; createdAt: number; approval: { name: string; body: string; applicantName: string } }
+  | { kind: "approval"; id: string; title: string; due: null; overdue: false; createdAt: number; approval: { name: string; body: string; applicantName: string; kind: string } }
   /** A 精靈 result that is only for me: 監督 / 稽核 (I am a head or the channel's creator), 提醒 (I owe it), or a SKILL proposal (I am an administrator). */
-  | { kind: "wizard"; id: string; title: string; due: null; overdue: false; createdAt: number; wizard: ItemView };
+  | { kind: "wizard"; id: string; title: string; due: null; overdue: false; createdAt: number; wizard: ItemView }
+  /** 有 N 位新註冊等待核准: one per class the person may decide (administrator: all, plus the ones without a class; head: own classes). */
+  | { kind: "register"; id: string; title: string; due: null; overdue: false; createdAt: number; register: { groupId: string | null; groupName: string | null; count: number } };
 
 /** Everything that waits for this person to act: assignments to me not finished, 需要確認 not yet confirmed, approvals (admin). Sorted by due. */
 export function personalItems(actor: Actor, now = Date.now(), tzo = 0): Item[] {
@@ -253,17 +256,21 @@ export function personalItems(actor: Actor, now = Date.now(), tzo = 0): Item[] {
     .filter((a) => isRecipient(actor, a) && !isExpired(a.expiresAt, now, tzo));
   for (const a of acks) items.push({ kind: "ack", id: a.id, title: a.title, due: null, overdue: false, createdAt: a.createdAt, announcement: view(actor, a, now, tzo) });
   if (actor.role === "admin") {
-    const orders = all<{ id: string; payload: string; applicantName: string | null; created_at: number }>(
-      `SELECT w.id, w.payload, u.name AS applicantName, w.created_at FROM work_orders w LEFT JOIN users u ON u.id=w.applicant_id WHERE w.status='pending' AND w.applicant_id<>? ORDER BY w.created_at`, actor.id);
+    const orders = all<{ id: string; kind: string; payload: string; applicantName: string | null; created_at: number }>(
+      `SELECT w.id, w.kind, w.payload, u.name AS applicantName, w.created_at FROM work_orders w LEFT JOIN users u ON u.id=w.applicant_id WHERE w.status='pending' AND w.applicant_id<>? ORDER BY w.created_at`, actor.id);
     for (const o of orders) {
-      let p: { name?: string; body?: string } = {};
+      let p: { name?: string; body?: string; title?: string } = {};
       try { p = JSON.parse(o.payload) as typeof p; } catch { /* keep empty */ }
-      items.push({ kind: "approval", id: o.id, title: `/${p.name ?? "?"}`, due: null, overdue: false, createdAt: o.created_at, approval: { name: p.name ?? "", body: p.body ?? "", applicantName: o.applicantName ?? "?" } });
+      items.push({ kind: "approval", id: o.id, title: p.title ?? `/${p.name ?? "?"}`, due: null, overdue: false, createdAt: o.created_at, approval: { name: p.title ?? p.name ?? "", body: p.body ?? "", applicantName: o.applicantName ?? "?", kind: o.kind } });
     }
   }
   // 精靈 results addressed to me only (private ones never sit in a channel): the bell counts them like everything else I must act on.
   for (const w of [...privateOpenFor(actor), ...skillProposalsOpen(actor)]) {
     items.push({ kind: "wizard", id: w.id, title: w.aspect === "skill" ? w.text : `${w.aspectZh}${w.roomName ? `:${w.roomName}` : ""}`.slice(0, 80), due: null, overdue: false, createdAt: w.createdAt, wizard: w });
+  }
+  for (const g of pendingRequests(actor)) {
+    const n = g.applicants.length;
+    items.push({ kind: "register", id: g.groupId ?? "none", title: g.groupName ? `有 ${n} 位新註冊等待核准:${n} 位申請加入『${g.groupName}』` : `有 ${n} 位新註冊等待核准`, due: null, overdue: false, createdAt: Math.min(...g.applicants.map((a) => a.createdAt)), register: { groupId: g.groupId, groupName: g.groupName, count: n } });
   }
   return items.sort((x, y) => (x.due ?? Infinity) - (y.due ?? Infinity) || x.createdAt - y.createdAt);
 }
@@ -276,7 +283,7 @@ export function bulletinSummary(actor: Actor, now = Date.now(), tzo = 0) {
   return {
     count: items.length,
     overdue: items.some((i) => i.overdue),
-    parts: { assignments: items.filter((i) => i.kind === "assignment").length, acks: items.filter((i) => i.kind === "ack").length, approvals: items.filter((i) => i.kind === "approval").length, wizards: items.filter((i) => i.kind === "wizard").length },
+    parts: { assignments: items.filter((i) => i.kind === "assignment").length, acks: items.filter((i) => i.kind === "ack").length, approvals: items.filter((i) => i.kind === "approval").length, wizards: items.filter((i) => i.kind === "wizard").length, registers: items.filter((i) => i.kind === "register").length },
     urgent: items.slice(0, 2).map((i) => ({ kind: i.kind, id: i.id, title: i.title, due: i.due, overdue: i.overdue })),
     unread: { count: unread.length, latest: unread.slice(0, 2).map(head) },
     canPost: canPostAnywhere(actor),

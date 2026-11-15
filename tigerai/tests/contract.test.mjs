@@ -449,110 +449,64 @@ T("S5: department heads tick for their own groups only; library alone shows noth
   assert.ok(!(await state.a.get("/api/tg/prompts")).json.prompts.some((p) => p.name === `pub-${tag}`), "published but not ticked");
 });
 
-// ---------------------------------------------------------------- S4
-async function orgPost(c, kind, buffer) {
-  const res = await fetch(`${base}/api/tg/admin/org/${kind}`, { method: "POST", headers: { "Content-Type": "application/octet-stream", Cookie: c.cookie }, body: buffer });
+// ---------------------------------------------------------------- S4 (org.xlsx: units / members / lists; the full rules are in tests/ce-org-p3.test.mjs)
+async function orgPost(c, kind, buffer, digest) {
+  const res = await fetch(`${base}/api/tg/admin/org/${kind}${digest ? `?digest=${digest}` : ""}`, { method: "POST", headers: { "Content-Type": "application/octet-stream", Cookie: c.cookie }, body: buffer });
   const text = await res.text();
   let json = null; try { json = JSON.parse(text); } catch { /* */ }
   return { status: res.status, json, text };
 }
 const userCount = async () => (await state.admin.get("/api/tg/admin/users")).json.users.length;
+const UH = ["name", "parent", "description", "managers", "confirmers"];
+const MH = ["action", "email", "employeeId", "name", "role", "status", "units"];
 
-T("S4: org sheet: preview, apply once, apply again changes nothing", async () => {
+T("S4: org sheet: preview, apply with the digest, a stale or missing digest is refused", async () => {
   const tag = `T${Math.random().toString(36).slice(2, 6)}`;
-  const file = await buildXlsx(sampleOrgSheets(tag));
+  const em = (n) => `${tag.toLowerCase()}${n}@example.com`;
+  const file = await buildXlsx([
+    { name: "units", rows: [UH, [`${tag}Acme`, "", "Whole company", "", ""], [`${tag}Sales`, `${tag}Acme`, "", em("sam"), ""]] },
+    { name: "members", rows: [MH, ["hire", em("sam"), "", `${tag}Sam`, "", "", `${tag}Sales`], ["hire", em("pat"), "", `${tag}Pat`, "", "", `${tag}Sales`]] },
+  ]);
   const before = await userCount();
   assert.equal((await orgPost(state.a, "preview", file)).status, 403);
-  assert.equal((await orgPost(state.a, "apply", file)).status, 403);
   const preview = await orgPost(state.admin, "preview", file);
   assert.equal(preview.status, 200);
   assert.deepEqual(preview.json.errors, []);
-  assert.equal(preview.json.summary.hire, 3);
-  assert.equal(preview.json.summary.unitsCreate, 3);
+  assert.equal(preview.json.summary.hire, 2);
   assert.equal(await userCount(), before, "a preview writes nothing");
-  const applied = await orgPost(state.admin, "apply", file);
+  assert.equal((await orgPost(state.admin, "apply", file)).status, 400, "apply without a digest");
+  assert.equal((await orgPost(state.admin, "apply", file, "stale")).status, 409);
+  const applied = await orgPost(state.admin, "apply", file, preview.json.digest);
   assert.equal(applied.status, 200, applied.text);
-  assert.equal(applied.json.initialPasswordsCsv.trim().split("\n").length, 4, "header + three accounts");
-  assert.equal(await userCount(), before + 3);
+  assert.equal(applied.json.initialPasswordsCsv.trim().split("\n").length, 3, "header + two accounts");
+  assert.equal(await userCount(), before + 2);
   const groups = (await state.admin.get("/api/tg/admin/groups")).json.groups;
-  const root = groups.find((g) => g.name === `${tag}Acme Corp`);
   const sales = groups.find((g) => g.name === `${tag}Sales`);
-  assert.equal(sales.parent_id, root.id, "the tree is kept");
-  const users = (await state.admin.get("/api/tg/admin/users")).json.users;
-  const sam = users.find((u) => u.email === `${tag.toLowerCase()}sam@example.com`);
+  assert.equal(sales.parent_id, groups.find((g) => g.name === `${tag}Acme`).id, "the tree is kept");
+  const sam = (await state.admin.get("/api/tg/admin/users")).json.users.find((u) => u.email === em("sam"));
   assert.ok(sales.members.some((m) => m.user_id === sam.id && m.is_manager === 1));
-  // the one-time password works, and forces a change
   const pw = applied.json.initialPasswordsCsv.split("\n").find((l) => l.startsWith(sam.email)).split(",")[2];
   await new Promise((r) => setTimeout(r, 1200));
-  const samClient = new Client(base);
-  assert.equal((await samClient.login(sam.email, pw)).mustChangePassword, true);
-  // second run: nothing to do
-  const again = await orgPost(state.admin, "apply", file);
-  assert.equal(again.status, 200, again.text);
-  assert.equal(again.json.summary.hire, 0);
-  assert.equal(again.json.summary.alreadyHired, 3);
-  assert.equal(again.json.summary.unitsCreate, 0);
-  assert.equal(await userCount(), before + 3);
-  // audit: summary and file hash, never a password
+  assert.equal((await new Client(base).login(sam.email, pw)).mustChangePassword, true);
   const rows = (await state.admin.get("/api/tg/admin/audit?action=org.import")).json.rows;
-  assert.ok(rows.length >= 2 && /"sha256":"[0-9a-f]{64}"/.test(rows[0].extra));
+  assert.ok(rows.length >= 1 && /"sha256":"[0-9a-f]{64}"/.test(rows[0].extra));
   assert.ok(!rows.some((r) => r.extra.includes(pw)));
-  state.org = { tag, file };
+  state.org = { tag, em };
 });
 
-T("S4: org sheet: bad files are stopped at preview, nothing is written", async () => {
-  const { tag } = state.org;
-  const before = await userCount();
-  const groupsBefore = (await state.admin.get("/api/tg/admin/groups")).json.groups.length;
-  const members = (rows) => ({ name: "members", rows: [["email", "name", "action", "unit", "manager"], ...rows] });
-  const units = (rows) => ({ name: "units", rows: [["unit", "parent", "description"], ...rows] });
-  const cases = {
-    "a loop of parents": [units([["A1", "B1", ""], ["B1", "A1", ""]]), members([])],
-    "unknown parent": [units([["C1", "Nowhere", ""]]), members([])],
-    "unknown unit for a hire": [units([["D1", "", ""]]), members([["x1@example.com", "X1", "hire", "Missing", "no"]])],
-    "bad action": [units([["E1", "", ""]]), members([["x2@example.com", "X2", "fire", "E1", "no"]])],
-    "formula-looking text": [units([["F1", "", ""]]), members([["x3@example.com", "=HYPERLINK(1)", "hire", "F1", "no"]])],
-    "an administrator row": [units([["G1", "", ""]]), members([[e.ADMIN_EMAIL, "adm", "leave", "G1", "no"]])],
-    "an unknown leaver": [units([["H1", "", ""]]), members([["ghost@example.com", "", "leave", "", ""]])],
-    "a duplicate email": [units([["I1", "", ""]]), members([["x4@example.com", "X4", "hire", "I1", "no"], ["x4@example.com", "X4b", "hire", "I1", "no"]])],
-  };
-  for (const [label, sheets] of Object.entries(cases)) {
-    const file = await buildXlsx(sheets);
-    const p = await orgPost(state.admin, "preview", file);
-    assert.equal(p.status, 200);
-    assert.ok(p.json.errors.length > 0, `${label}: expected a problem`);
-    assert.ok(p.json.errors.every((x) => x.sheet && typeof x.row === "number" && x.col), `${label}: errors carry the cell position`);
-    assert.equal((await orgPost(state.admin, "apply", file)).status, 422, label);
-  }
-  const withFormula = await buildXlsx([{ ...units([["J1", "", ""]]), formulaCell: true }, members([])]);
-  assert.ok((await orgPost(state.admin, "preview", withFormula)).json.errors[0].message.includes("formulas"));
-  assert.ok((await orgPost(state.admin, "preview", Buffer.from("name,email\nx,y\n"))).json.errors.length > 0, "a csv is not an xlsx");
-  const big = Buffer.concat([Buffer.from("PK"), Buffer.alloc(3 * 1024 * 1024)]);
-  const tooBig = await orgPost(state.admin, "preview", big);
-  assert.ok(tooBig.status === 413 || tooBig.json.errors.length > 0);
-  assert.equal(await userCount(), before);
-  assert.equal((await state.admin.get("/api/tg/admin/groups")).json.groups.length, groupsBefore);
-  void tag;
-});
-
-T("S4: org sheet: leave disables the account and removes it from its unit; repeating changes nothing", async () => {
-  const { tag } = state.org;
-  const leave = await buildXlsx([
-    { name: "units", rows: [["unit", "parent", "description"], [`${tag}Sales`, `${tag}Acme Corp`, ""]] },
-    { name: "members", rows: [["email", "name", "action", "unit", "manager"], [`${tag.toLowerCase()}pat@example.com`, "", "leave", "", ""], [`${tag.toLowerCase()}sam@example.com`, "", "keep", "", ""]] },
-  ]);
-  const first = await orgPost(state.admin, "apply", leave);
+T("S4: org sheet: leave disables and keeps the unit; bad files are stopped at the preview", async () => {
+  const { tag, em } = state.org;
+  const leave = await buildXlsx([{ name: "units", rows: [UH] }, { name: "members", rows: [MH, ["leave", em("pat"), "", "", "", "", ""]] }]);
+  const p = await orgPost(state.admin, "preview", leave);
+  const first = await orgPost(state.admin, "apply", leave, p.json.digest);
   assert.equal(first.status, 200, first.text);
-  assert.equal(first.json.summary.leave, 1);
-  const users = (await state.admin.get("/api/tg/admin/users")).json.users;
-  const pat = users.find((u) => u.email === `${tag.toLowerCase()}pat@example.com`);
-  const sam = users.find((u) => u.email === `${tag.toLowerCase()}sam@example.com`);
+  const pat = (await state.admin.get("/api/tg/admin/users")).json.users.find((u) => u.email === em("pat"));
   assert.equal(pat.status, "disabled");
-  assert.deepEqual(pat.groups, []);
-  assert.equal(sam.status, "active", "people not named with leave are untouched");
-  const again = await orgPost(state.admin, "apply", leave);
-  assert.equal(again.json.summary.leave, 0);
-  assert.equal(again.json.summary.alreadyLeft, 1);
+  assert.ok(pat.groups.length > 0, "the unit link stays");
+  const bad = await buildXlsx([{ name: "units", rows: [UH, [`${tag}X`, "Nowhere", "", "", ""]] }, { name: "members", rows: [MH, ["fire", "x@example.com", "", "X", "", "", ""]] }]);
+  const pb = await orgPost(state.admin, "preview", bad);
+  assert.ok(pb.json.errors.length >= 2 && pb.json.errors.every((x) => x.sheet && typeof x.row === "number" && x.col));
+  assert.equal((await orgPost(state.admin, "apply", bad, "x")).status, 422);
 });
 
 // ---------------------------------------------------------------- models: one /v1 endpoint

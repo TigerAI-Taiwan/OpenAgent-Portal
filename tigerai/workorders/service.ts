@@ -16,9 +16,12 @@ export interface OrderRow {
   id: string; kind: string; applicant_id: string; payload: Record<string, unknown>;
   status: "pending" | "approved" | "rejected"; approver_id: string | null; decided_at: number | null; note: string | null;
   result_ref: string | null; created_at: number;
+  /** Display name of the applicant (學號-班級-姓名 / 工號-部門-姓名), filled by listOrders; the id is never what a page shows. */
+  applicant_name?: string;
 }
 interface Raw extends Omit<OrderRow, "payload"> { payload: string }
 const parse = (r: Raw): OrderRow => ({ ...r, payload: JSON.parse(r.payload) as Record<string, unknown> });
+const LIST = "SELECT w.*, COALESCE(u.name, w.applicant_id) AS applicant_name FROM work_orders w LEFT JOIN users u ON u.id=w.applicant_id";
 
 type Handler = (order: OrderRow, approverId: string) => string | null;
 const handlers = new Map<string, Handler>();
@@ -39,8 +42,8 @@ export function getOrder(id: string): OrderRow | null {
 
 export function listOrders(actor: { id: string; role: string }, status?: string): OrderRow[] {
   const rows = (actor.role === "admin"
-    ? getDb().prepare("SELECT * FROM work_orders ORDER BY created_at DESC LIMIT 500").all()
-    : getDb().prepare("SELECT * FROM work_orders WHERE applicant_id=? ORDER BY created_at DESC LIMIT 200").all(actor.id)) as unknown as Raw[];
+    ? getDb().prepare(`${LIST} ORDER BY w.created_at DESC LIMIT 500`).all()
+    : getDb().prepare(`${LIST} WHERE w.applicant_id=? ORDER BY w.created_at DESC LIMIT 200`).all(actor.id)) as unknown as Raw[];
   return rows.map(parse).filter((o) => !status || o.status === status);
 }
 

@@ -1,180 +1,134 @@
-# OpenAgent Portal
+<p align="center"><img src="public/brand/tigerai-logo.png" alt="TigerAI" width="140"></p>
 
-> **based on [pi-agent](https://github.com/earendil-works/pi) and [pi-web](https://github.com/agegr/pi-web)** (both MIT). Not an official release of either; see [NOTICE](NOTICE). The `tigerai/` directory is under a draft licence (草稿,待法律審閱 / draft pending legal review, [tigerai/LICENSE](tigerai/LICENSE)). The logo is a TigerAI trademark, not covered by the code licence (`public/brand/NOTICE.md`).
+# OpenAgent Portal（based on pi-agent and pi-web）
 
-## 版本 / Editions
+**給團隊用的自架 AI Agent 入口：公司、學校都能用。** 頻道、交辦、技能、n8n，全部跑在你自己的機器上。
 
-| | 社群版 Community | 顧問包 Consultant pack | 商業客製版 Custom |
+[English](README.en.md) · 社群版 1.1.x-ce · 沒有人數上限
+
+---
+
+## 為什麼需要它
+
+個人用的 AI Agent 工具，一次只服務一個人。團隊要的是另一組東西：
+
+- **共用的頻道與紀錄**：事情說過、決定過、誰答應了什麼，都留得下來、追得到。
+- **管理**：帳號與管理員、稽核紀錄、要給別人用的流程要經審查才上架。
+- **地端模型加備援**：平常用你自己的模型，主要連線掛了才改走備援。
+
+OpenAgent Portal 就是把這些補在 pi-agent / pi-web 之上。AI 只寫草稿與建議；確認、採用、完成、核准都由人按。
+
+## 從故事開始看
+
+兩個虛構的故事，各用一條線帶你看完整個產品（故事檔在 [`docs/stories/`](docs/stories/)）：
+
+- **[虎虎生風精密：三個月，把一張單追到底](docs/stories/中小企業主_故事_v1.0.md)**（*Taiwan Tech Precision: Three Months to Follow One Order All the Way Through*）
+  同仁先用自己的話留下工作，公司再把紀錄一步步變成接得下去、追得到的工作；從全公司頻道、部門與專案頻道，長成 **企業大腦（Company Brain）**。
+- **[學 AI Agent：王老師的一學期](docs/stories/學校課程_故事_v1.0.md)**（*Learning AI Agents: Professor Wang's Semester*）
+  學生學的不是「怎麼問 AI」，而是看懂細節、讓 AI 把事情做對，從寫提示詞、建技能到建 n8n 流程。
+
+英文版：[Taiwan Tech Precision](docs/stories/SME_Story_v1.0_en.md) · [Professor Wang's Semester](docs/stories/School_Story_v1.0_en.md)。故事裡的公司、學校、人物與數字皆為虛構。
+
+## 社群版功能
+
+| 類別 | 功能 |
+|---|---|
+| 日常工作 | 對話（傳圖、附加 .md/.txt）；頻道（全公司／部門／專案，可 @AI）；交辦（給人或給 AI，做完要人確認）；公佈欄與鈴鐺；提示詞（自己寫、`#` 叫出、可分享） |
+| 技能 | 內建技能（含工具）：填寫申請表、上網找參考資料、做成報告投影片、n8n 流程助手；可「複製成我的」，也可自建技能。技能不會多給權限 |
+| 精靈（摘要與分析） | 每日摘要、工作週報、訊息分析，都從「記錄、監督、稽核、提醒、建議」五個面向看，每項產出附出處；另有 SKILL 建議、會議摘要（上傳錄音或貼逐字稿，需另接語音轉文字服務） |
+| 上網與文件 | 上網查資料（SearXNG，只送查詢關鍵字）；做成報告投影片、填表出 PDF（Gotenberg 轉檔） |
+| n8n | 簡易 webhook（Portal 呼叫 n8n、n8n 呼叫 Portal）；**n8n MCP**。社群版只開放 n8n 的 MCP，當作 MCP 示範；每人可自己建、測流程，上架給別人用才要管理員審查 |
+| 模型 | 多組連線排順序；地端模型＋備援；每人可加個人金鑰（含 NVIDIA 免費選項），個人連線與公用模型可互相備援 |
+| 帳號與管理 | 自行註冊＋通關密語＋核准；組織 `org.xlsx` 匯入；使用者紀錄（最後上線、停留時間、CSV 匯出）；稽核；閒置自動登出 |
+
+更多（MCP 集成區、其他系統的 MCP、Gitea 存檔、營運飛輪與流程範本、API Proxy）屬顧問包或商業客製版，見 [EDITIONS.md](EDITIONS.md)。
+
+## 快速開始（Docker）
+
+**需要**：能跑 Docker 的機器（含 `docker compose`）。映像：
+
+```
+ghcr.io/tigerai-taiwan/openagent-portal:1.1.2-ce
+```
+
+> 預設埠 **30161**。想從原始碼自己建映像：`docker compose up -d --build`（同一個標籤）。
+
+Portal 與其他三項服務是**各自獨立的容器**，Portal 後台只填網址、按測試：Portal（必要）；SearXNG（上網查資料）、Gotenberg（投影片／PDF 轉檔）、n8n（流程）都是選配。
+
+`.env`（複製 `.env.example` 後填寫；**不要提交進版控**）。最少要填這三行，其他都有預設值：
+
+```env
+TIGERAI_ADMIN_EMAIL=you@example.com
+TIGERAI_ADMIN_PASSWORD=<請設定很長的密碼>
+TZ=Asia/Taipei
+```
+
+要用選配服務時再加（見下一節）：`COMPOSE_PROFILES=search,convert,n8n`、`SEARXNG_SECRET=<隨機字串>`、`N8N_ENCRYPTION_KEY=<隨機字串>`。要讓區網連線：`PI_WEB_BIND=0.0.0.0` 並填 `PI_WEB_ALLOWED_HOSTS`（使用者在瀏覽器輸入的主機名稱，逗號分隔）。埠：`PI_WEB_PORT`（預設 30161）。
+
+`compose.yaml`（repo 內附，節錄；服務名稱 `pi-web`）：
+
+```yaml
+services:
+  pi-web:
+    image: ghcr.io/tigerai-taiwan/openagent-portal:${OAP_IMAGE_TAG:-1.1.2-ce}
+    restart: unless-stopped
+    environment:
+      PORT: "30161"
+      TIGERAI_ENABLED: "1"
+      TIGERAI_ADMIN_EMAIL: ${TIGERAI_ADMIN_EMAIL:-adm@local}
+      TIGERAI_ADMIN_PASSWORD: ${TIGERAI_ADMIN_PASSWORD:-}
+      TZ: ${TZ:-Asia/Taipei}
+    ports: ["${PI_WEB_BIND:-127.0.0.1}:${PI_WEB_PORT:-30161}:30161"]
+    volumes: [pi-agent-data:/home/node/.pi/agent, pi-cwd-data:/home/node/pi-cwd]
+
+  # 選配服務,預設不啟動(compose profiles):searxng(search)、gotenberg(convert)、n8n(n8n)
+  searxng:   { profiles: [search],  image: "searxng/searxng:2026.9.5-c7f3080aa" }   # 只在內部網路,另需 docs/searxng-settings.yml(已附)
+  gotenberg: { profiles: [convert], image: "gotenberg/gotenberg:8.21.1" }          # 只在內部網路
+  n8n:       { profiles: [n8n],     image: "docker.n8n.io/n8nio/n8n:2.44.6" }      # 編輯畫面只綁本機 127.0.0.1:5678
+```
+
+選配服務**不會**隨 `docker compose up -d` 啟動；要用哪個就開哪個：
+
+```
+docker compose --profile search --profile convert --profile n8n up -d
+```
+
+啟動後：
+
+1. `docker compose up -d`（要選配服務就加 `--profile …`），瀏覽器開 <http://127.0.0.1:30161>。
+2. 用 `.env` 的管理員登入。**第一次登入一定要先改密碼**，改完才進得去。
+3. **設定 → 模型連線**：填你的模型服務（OpenAI 相容 `/v1` 網址與金鑰），按「測試」。沒有地端模型時，可直接用 NVIDIA 免費模型；有地端模型時，再加一條 NVIDIA 當**備援**（只有地端故障時才改走，畫面會標示，可關閉）。沒有模型，對話與精靈不會有回應。
+4. **設定 → 管理**：填 SearXNG（`http://searxng:8080`）、Gotenberg（`http://gotenberg:3000`）、n8n（`http://n8n:5678`）的網址並測試；建立單位與成員，或開放通關密語自行註冊。
+
+會議摘要用的**語音轉文字是另一個服務**（OpenAI 相容的轉寫端點），Portal 不內附。所有資料放在 Docker volume，備份就是複製資料卷。
+
+## 資料與隱私
+
+平常資料全部在你的機器上。只有在你設定了備援（例如 NVIDIA）或成員加了個人金鑰、而地端模型失敗或該成員選用時，對話才會送到你選擇的模型服務商，畫面會標示。上網搜尋只送查詢關鍵字。**管理員可以查看成員的對話**（唯讀、每次查看記稽核），成員的設定頁固定告知這件事。
+
+## 版本
+
+| | 社群版（本 repo） | 顧問包 | 商業客製版 |
 |---|---|---|---|
-| 對話、頻道、交辦、公佈欄、提示詞、四支內建精靈、地端模型＋備援 | yes | yes | yes |
-| 簡易 n8n Webhook 示範(登記、AI 呼叫、n8n 呼叫 Portal) | yes | yes | yes |
-| MCP 集成區、n8n 排程、Gitea、顧問工具 | no | yes | yes |
-| API Proxy(依個人權限) | no | no | yes |
+| 內容 | 上表所有功能，**不設人數上限** | 顧問帶著把流程與系統接好 | 依個人管權限、串核心系統 |
+| 取得 | 自行安裝 | 由虎智授權的顧問提供 | 與虎智洽談 |
 
-**這個 repo 是社群版**:單純的本地版 Agent Portal,只附簡易的 n8n Webhook 示範,沒有 MCP 集成區、Gitea 與 n8n 排程等對外串接(要的話自己想辦法,或改用顧問包)。顧問包是另外授權的加值包,不在這個 repo。完整說明、導入路徑與五個面向:[EDITIONS.md](EDITIONS.md)。
+> 社群版的東西，你們都可以自己動手。要省時間、少走冤枉路，或想要有人負責交付和交接，再來找顧問服務。
 
-[中文文档](./docs/README.zh-CN.md) | [日本語](./docs/README.ja.md) | [Русский](./docs/README.ru.md)
+## 手冊
 
-Local browser UI for the [pi coding agent](https://github.com/earendil-works/pi). Pi Web uses the same local configuration and session files as pi, so you can browse and resume conversations, run agent turns, configure models and resources, and inspect project files from a browser.
+老師使用手冊、中小企業導入手冊：**PDF 手冊與上課投影片：聯繫虎智科技索取。**
 
-**[Try the interactive demo →](https://agegr.github.io/pi-web/)** The real Pi Web UI runs entirely in your browser, with sample sessions, files and models. There is nothing to install; replies are pre-written and no model is called.
+## 致謝與授權
 
-![Pi Web displaying a pi session with structured Markdown, tool calls, and project navigation](https://raw.githubusercontent.com/agegr/pi-web/main/docs/screenshot2.png)
+- 上游：[pi-web](https://github.com/agegr/pi-web)（agegr，MIT）、[pi-agent / pi](https://github.com/earendil-works/pi)（earendil-works，MIT）。授權聲明見 [NOTICE](NOTICE)。本專案**不是**上游的官方版本。
+- `tigerai/` 目錄採用 TigerAI Sustainable Use License（**草稿，待法律審閱**）。Logo 為 TigerAI 商標，不在程式授權範圍內。
 
-## Features
+作者：盧業興 Morris Lu · n8n Taipei Ambassador · 虎智科技 TigerAI（n8n Expert Partner）。
+有使用問題可以來找虎智科技（tiger.ai.tw@gmail.com）。
 
-- **Session workspace**: browse, resume, rename, export, and delete conversations grouped by project, with running state, context usage, cost, and compaction details.
-- **Two ways to branch**: **New session** creates an independent session file from an earlier message; **Edit from here** creates a branch inside the current session.
-- **Project file tools**: browse and upload files, inspect Git diffs, and preview source, Markdown, images, audio, PDFs, and DOCX files with automatic refresh.
-- **Git worktrees**: switch checkouts from the sidebar while keeping sessions from the same repository grouped together.
-- **Web-based configuration**: manage provider login and API keys, models, model tests, plugin packages, and skills without leaving Pi Web.
-- **English, Simplified Chinese, and Traditional Chinese UI**: Pi Web follows the browser language initially. Change it under Settings → General → Language.
+---
 
-## Quick Start
+## 上游 pi-web 快速開始（不啟用 TigerAI 層）
 
-Pi Web requires Node.js 22.19.0 or newer. Check your version with `node --version`, then run:
-
-```bash
-npx @agegr/pi-web@latest
-```
-
-The CLI opens a browser after the server is ready. If it does not, open [http://127.0.0.1:30141](http://127.0.0.1:30141). Pi Web listens only on `127.0.0.1` by default.
-
-If no model provider is configured yet, open the **Models** panel to sign in or add an API key.
-
-To install the `pi-web` command globally:
-
-```bash
-npm install -g @agegr/pi-web@latest
-pi-web
-```
-
-Commands:
-
-```bash
-pi-web version          # print the installed version
-pi-web status           # list running servers
-pi-web stop [--port N]  # stop a running server
-pi-web open [--port N]  # open a running server in the browser
-pi-web update [--check] # update a global npm install
-```
-
-To update, run `pi-web stop`, then `pi-web update` (or run the same install command again). To uninstall, run `npm uninstall -g @agegr/pi-web`.
-
-## Configuration
-
-For port and hostname, command-line options override the corresponding environment variables. Either `--no-open` or `PI_WEB_NO_OPEN=1` disables automatic browser opening. Run `pi-web --help` (or `-h`) to print startup options and exit without starting the server. Unknown options exit with an error.
-
-| Option or environment variable | Purpose | Default |
-| --- | --- | --- |
-| `--help`, `-h` | Print startup options and exit | — |
-| `--port <port>`, `-p <port>`, or `PORT` | Server port | `30141` |
-| `--hostname <host>`, `-H <host>`, or `PI_WEB_HOSTNAME` | Bind hostname | `127.0.0.1` |
-| `--no-open` or `PI_WEB_NO_OPEN=1` | Do not open a browser automatically | Browser opens |
-| `PI_WEB_APP_NAME` | PWA manifest `name` and `short_name`; surrounding whitespace is trimmed, empty values use the default | `Pi Web` |
-| `PI_WEB_SKIP_VERSION_CHECK=1` | Disable Pi Web update checks | Unset |
-| `PI_WEB_ALLOWED_HOSTS` | Additional exact proxy or custom hostnames, comma-separated | Unset |
-| `PI_WEB_PASSWORD` | Enable browser password login; API clients may use Basic Auth with username `pi` | Authentication disabled |
-| `PI_WEB_IDLE_TIMEOUT_MS` | Session idle timeout in milliseconds, up to `2147483647`; `0` disables idle shutdown; invalid or out-of-range values use the default | `600000` (10 min) |
-| `PI_WEB_SHUTDOWN_DEADLINE_MS` | How long extensions get to handle `session_shutdown` before a closing session is disposed anyway, in milliseconds up to `2147483647`; `0`, invalid or out-of-range values use the default | `5000` (5 s) |
-| `PI_CODEMODE_MAX_WORKERS` | pi's limit on codemode scripts running at once, shared by every session and subagent in the server; pi's own default is `2`, and pi-web sets `8` when the variable is unset or empty. Each script may use up to 256 MB | `8` |
-
-Set `PI_WEB_APP_NAME` before starting the server (for example, `PI_WEB_APP_NAME='Work Pi' pi-web`). After changing it, restart the server to serve the new manifest; no rebuild is required. Updates to the name of an already installed PWA are managed by the browser and are not guaranteed to appear immediately. This does not change the page title or icons.
-
-For example:
-
-```bash
-pi-web --help
-pi-web -p 8080 -H 0.0.0.0 --no-open
-```
-
-### Remote Access
-
-Binding to a non-loopback address exposes an agent that can execute high-privilege actions. On a trusted LAN, require a long random password:
-
-```bash
-PI_WEB_PASSWORD='a-long-random-password' pi-web --hostname 0.0.0.0
-```
-
-Password authentication does not encrypt the connection. Do not expose Pi Web over plain HTTP to the internet; use HTTPS through a trusted reverse proxy or a trusted VPN. If a reverse proxy sends an external hostname, add that exact name to `PI_WEB_ALLOWED_HOSTS`. This allow-list does not change the address Pi Web binds to.
-
-With many chats, terminals or file previews active at once, plain HTTP limits the browser to six connections and requests start to wait; see [Serving Pi Web over HTTP/2](./docs/http2.md).
-
-### Docker
-
-Each release publishes an image to `ghcr.io/agegr/pi-web`. See [Running Pi Web in Docker](./docs/docker.md) for it, the Compose example and which volumes to keep.
-
-### HTTP Proxy
-
-Server-side model and API requests honor the standard `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` environment variables.
-
-On macOS or Linux:
-
-```bash
-HTTP_PROXY=http://127.0.0.1:7890 \
-HTTPS_PROXY=http://127.0.0.1:7890 \
-NO_PROXY=localhost,127.0.0.1 \
-npx @agegr/pi-web@latest
-```
-
-On Windows PowerShell:
-
-```powershell
-$env:HTTP_PROXY = "http://127.0.0.1:7890"
-$env:HTTPS_PROXY = "http://127.0.0.1:7890"
-$env:NO_PROXY = "localhost,127.0.0.1"
-npx @agegr/pi-web@latest
-```
-
-## Notes
-
-- **Agent data**: Pi Web reads pi data from `~/.pi/agent` by default, including session files under `sessions/<encoded-cwd>/<timestamp>_<uuid>.jsonl`. Set `PI_CODING_AGENT_DIR` to use another pi agent directory.
-- **Filesystem access**: Pi Web must be able to read the agent data directory and the working directories recorded by its sessions. Run Pi Web in the same filesystem environment as pi when sharing existing sessions.
-- **Shared configuration**: the Models panel uses pi's model, settings, and credential storage, so changes are visible to both interfaces. An open session applies a saved edit of its model when you select the model again.
-- **File access boundary**: the file browser is limited to working directories selected in Pi Web and project or session roots it already knows about; it is not a general filesystem browser.
-- **Git worktrees**: see [Worktrees in Pi Web](./docs/worktrees.md) for switcher visibility, worktree creation, and removal behavior.
-- **Integration hooks**: apps that embed Pi Web can replace the session row's context menu, and server-side pi extensions can keep a session from idle shutdown; see [Integration Hooks](./docs/integrations.md).
-
-## Development
-
-```bash
-npm install
-npm run dev
-```
-
-The development server runs at [http://127.0.0.1:30141](http://127.0.0.1:30141). Run the common checks with:
-
-```bash
-npm test
-node_modules/.bin/tsc --noEmit
-npm run lint
-```
-
-Do not run `next build` or `npm run build` during normal development. It writes to `.next/` and can interfere with the development server; leave builds for release work.
-
-Before starting on a feature, read [Contributing](./CONTRIBUTING.md) for what is in scope and the pull request checklist.
-
-Contributor guides: [Internationalization](./docs/i18n.md) and [Release process](./docs/release.md).
-
-## Repository Layout
-
-```text
-app/             Next.js UI and API routes
-components/      React UI components
-hooks/           Client state and interaction hooks
-lib/             Session, agent, model, file, Git, and security logic
-public/          Static assets and PWA files
-bin/             npm CLI entrypoint and launch option parsing
-docs/            Focused user and contributor guides
-demo/            Static browser demo published to GitHub Pages (see demo/README.md)
-```
-
-See [AGENTS.md](./AGENTS.md) for the architecture notes and detailed file map.
-
-## License
-
-[MIT](./LICENSE)
-
-## TigerAI Agent Portal (this fork)
-
-This fork adds multi-user accounts, conversation ownership, team rooms with an AI participant, a prompt library and an organisation-sheet import, all in [`tigerai/`](tigerai/README.md). The added code is **fair-code (source available)** under a draft Sustainable-Use-style licence (`tigerai/LICENSE`, pending legal review); it is not an OSI open-source licence. The upstream pi-web code stays under its MIT licence (`LICENSE`). Nothing of the addition runs unless `TIGERAI_ENABLED=1`.
+不設 `TIGERAI_ENABLED` 時，本專案行為與上游 pi-web 相同。上游的 npx 快速開始、設定、遠端存取與開發說明，請見 [docs/UPSTREAM_README.md](docs/UPSTREAM_README.md)（由現行 README「上游 pi-web 的快速開始」以後各節搬移）。

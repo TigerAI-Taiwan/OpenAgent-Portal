@@ -5,6 +5,7 @@ import { dataDir } from "../../config";
 import { getDb } from "../../db/store";
 import { getRoom } from "../../rooms/service";
 import { deliverExternalItem, recordExternalRun } from "../engine";
+import { stripEnd } from "../format";
 import type { Summary } from "./summarize";
 
 /** Tables of the meeting feature, created on first use (own file: the shared schema in db/store.ts is not touched). */
@@ -40,6 +41,17 @@ export const uploadsDir = (): string => join(meetingsDir(), "_uploads");
 export function ensureDir(p: string): string { mkdirSync(p, { recursive: true, mode: 0o700 }); return p; }
 
 export const transcriptPath = (id: string): string => join(meetingDir(id), "transcript.txt");
+export const crosscheckPath = (id: string): string => join(meetingDir(id), "crosscheck.json");
+
+/** What the 對照模型 pass left for a meeting: the marked lines and the measured times. Absent for meetings made before 1.1.2-ce. */
+export interface CrosscheckFile {
+  version: 1; enabled: boolean; mainMs: number | null; compareMs: number | null; wallMs: number | null; agreement: number | null; error?: string;
+  flags: { line: number; kinds: ("disagree" | "glossary")[]; other?: string; term?: string }[];
+}
+export function writeCrosscheck(id: string, v: CrosscheckFile): void { ensureDir(meetingDir(id)); writeFileSync(crosscheckPath(id), JSON.stringify(v) + "\n", { mode: 0o600 }); }
+export function readCrosscheck(id: string): CrosscheckFile | null {
+  try { const v = JSON.parse(readFileSync(crosscheckPath(id), "utf8")) as CrosscheckFile; return v && v.version === 1 && Array.isArray(v.flags) ? v : null; } catch { return null; }
+}
 export function writeTranscript(id: string, lines: string[]): void { ensureDir(meetingDir(id)); writeFileSync(transcriptPath(id), lines.join("\n") + "\n", { mode: 0o600 }); }
 export function readTranscriptLines(id: string): string[] {
   try { return readFileSync(transcriptPath(id), "utf8").split("\n").filter((l, i, a) => !(i === a.length - 1 && l === "")); } catch { return []; }
@@ -71,7 +83,7 @@ function migratePrivateItems(): void {
       let src: { label: string; quote: string }[] = [];
       try { src = JSON.parse(r.sources); } catch { /* unreadable: skipped below */ }
       const run = recordExternalRun({ kind: "meeting", roomId: room.id, runnerId: room.owner_id, requestedBy: null, ref: r.ref_id! });
-      if (deliverExternalItem(run, { aspect: r.kind, userId: r.user_id, text: `${r.title}。${r.body}`, sources: src.map((x) => ({ t: "x" as const, label: x.label, quote: x.quote })) })) moved++;
+      if (deliverExternalItem(run, { aspect: r.kind, userId: r.user_id, text: `${stripEnd(r.title)}。${r.body}`, sources: src.map((x) => ({ t: "x" as const, label: x.label, quote: x.quote })) })) moved++;
     }
     db.exec("DROP TABLE wizard_private_items");
     void moved;

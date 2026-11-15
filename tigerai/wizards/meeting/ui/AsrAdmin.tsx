@@ -5,25 +5,32 @@ import { useEffect, useState } from "react";
 import { api } from "../../../ui/kit";
 import { mt } from "./texts";
 
-type View = { configured: boolean; url: string; model: string; language: string; hasKey: boolean; keyLast4: string | null };
+type View = { configured: boolean; url: string; model: string; language: string; glossary?: string; hasKey: boolean; keyLast4: string | null; compareUrl?: string; compareModel?: string; hasCompareKey?: boolean; compareKeyLast4?: string | null };
 
 export default function AsrAdmin() {
   const [st, setSt] = useState<View | null>(null);
-  const [url, setUrl] = useState(""); const [model, setModel] = useState(""); const [lang, setLang] = useState(""); const [key, setKey] = useState("");
+  const [url, setUrl] = useState(""); const [model, setModel] = useState(""); const [lang, setLang] = useState(""); const [key, setKey] = useState(""); const [gloss, setGloss] = useState("");
   const [msg, setMsg] = useState(""); const [test, setTest] = useState("");
-  const apply = (v: View) => { setSt(v); setUrl(v.url); setModel(v.model); setLang(v.language); };
+  const [cUrl, setCUrl] = useState(""); const [cModel, setCModel] = useState(""); const [cKey, setCKey] = useState(""); const [cTest, setCTest] = useState("");
+  const apply = (v: View) => { setSt(v); setUrl(v.url); setModel(v.model); setLang(v.language); setGloss(v.glossary ?? ""); setCUrl(v.compareUrl ?? ""); setCModel(v.compareModel ?? ""); };
   useEffect(() => { void api<View>("admin/asr").then((r) => { if (r.ok) apply(r.data); else setMsg(r.data.error ?? ""); }); }, []);
   const runTest = async () => {
     setTest("…");
     const r = await api<{ ok: boolean; ms?: number; error?: string }>("admin/asr/test", "POST", { url: url || undefined, apiKey: key || undefined, model: model || undefined });
     setTest(r.data.ok ? mt("asrOk", { ms: r.data.ms ?? 0 }) : `${mt("asrFail")}: ${r.data.error ?? r.status}`);
   };
+  const runCompareTest = async () => {
+    setCTest("…");
+    const r = await api<{ ok: boolean; ms?: number; error?: string }>("admin/asr/test", "POST", { target: "compare", url: cUrl || undefined, apiKey: cKey || undefined, model: cModel || undefined });
+    setCTest(r.data.ok ? mt("asrOk", { ms: r.data.ms ?? 0 }) : `${mt("asrFail")}: ${r.data.error ?? r.status}`);
+  };
   const save = async (extra: Record<string, unknown> = {}) => {
-    const body: Record<string, unknown> = { url, model, language: lang, ...extra };
+    const body: Record<string, unknown> = { url, model, language: lang, glossary: gloss, compareUrl: cUrl, compareModel: cModel, ...extra };
     if (key && !("apiKey" in extra)) body.apiKey = key;
+    if (cKey && !("compareApiKey" in extra)) body.compareApiKey = cKey;
     const r = await api<View>("admin/asr", "PUT", body);
     if (!r.ok) { setMsg(r.data.error ?? ""); return; }
-    setKey(""); setMsg(mt("asrSaved")); apply(r.data);
+    setKey(""); setCKey(""); setMsg(mt("asrSaved")); apply(r.data);
   };
   if (!st) return <div className="tgx-muted">{msg || "…"}</div>;
   return (
@@ -35,7 +42,23 @@ export default function AsrAdmin() {
         <label style={{ flex: "1 1 180px" }}>{mt("asrLang")}<input className="tgx-input" style={{ width: "100%" }} value={lang} maxLength={12} onChange={(e) => setLang(e.target.value)} placeholder="zh" /></label>
       </div>
       <label>{mt("asrKey")}<input className="tgx-input" style={{ width: "100%" }} type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} placeholder={st.hasKey ? mt("asrKeyHas", { last4: st.keyLast4 ?? "" }) : mt("asrKeyNone")} /></label>
+      <label>{mt("asrGlossary")}<textarea className="tgx-input" style={{ width: "100%", minHeight: 70 }} value={gloss} onChange={(e) => setGloss(e.target.value)} placeholder={mt("asrGlossaryPh")} /></label>
+      <div className="tgx-muted" style={{ fontSize: 12 }}>{mt("asrGlossaryHelp")}</div>
       <div className="tgx-muted" style={{ fontSize: 12 }}>{mt("asrHelp")}</div>
+      <div data-tg-asr-compare style={{ display: "flex", flexDirection: "column", gap: 8, borderTop: "1px solid var(--border)", paddingTop: 10 }}>
+        <strong>{mt("asrCmpTitle")}</strong>
+        <label>{mt("asrCmpUrl")}<input className="tgx-input" style={{ width: "100%" }} data-testid="asr-cmp-url" value={cUrl} onChange={(e) => setCUrl(e.target.value)} placeholder={mt("asrUrlPh")} /></label>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <label style={{ flex: "1 1 180px" }}>{mt("asrCmpModel")}<input className="tgx-input" style={{ width: "100%" }} data-testid="asr-cmp-model" value={cModel} onChange={(e) => setCModel(e.target.value)} /></label>
+          <label style={{ flex: "1 1 180px" }}>{mt("asrCmpKey")}<input className="tgx-input" style={{ width: "100%" }} type="password" autoComplete="off" value={cKey} onChange={(e) => setCKey(e.target.value)} placeholder={st.hasCompareKey ? mt("asrKeyHas", { last4: st.compareKeyLast4 ?? "" }) : mt("asrKeyNone")} /></label>
+        </div>
+        <div className="tgx-muted" style={{ fontSize: 12 }}>{mt("asrCmpHelp")}</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <button type="button" className="tgx-btn" disabled={!cUrl} onClick={runCompareTest}>{mt("asrTest")}</button>
+          {st.hasCompareKey && <button type="button" className="tgx-btn" onClick={() => void save({ compareApiKey: null })}>{mt("asrCmpClear")}</button>}
+          {cTest && <span role="status">{cTest}</span>}
+        </div>
+      </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <button type="button" className="tgx-btn" onClick={runTest}>{mt("asrTest")}</button>
         <button type="button" className="tgx-btn primary" onClick={() => void save()}>{mt("asrSave")}</button>

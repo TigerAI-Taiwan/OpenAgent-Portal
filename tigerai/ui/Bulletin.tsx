@@ -10,6 +10,8 @@ import { DateField, Icon, Modal, Segmented, TextPromptDialog, api, useConfirm } 
 import NewAssignment, { ASSIGNMENT_CREATED } from "./NewAssignment";
 import { closeBulletin, openBulletin, refreshSummary, useBulletin, type BulletinTab } from "./bulletin-store";
 import { useMe } from "./me";
+import { focusRequestGroup } from "./Register";
+import { openSettings } from "./store";
 import { WizardPersonal, type WItem } from "./Wizards";
 
 const CSS = `
@@ -40,12 +42,13 @@ type Ann = {
   stats?: { total: number; read: number; acked: number; notRead: string[]; notAcked: string[] };
 };
 type Hist = { id: number; editorName: string; ts: number; oldTitle: string; oldBody: string };
-type Asg = { id: string; title: string; description: string; applicantName: string; assigneeId: string; assigneeName: string; dueDate: number | null; sessionId: string | null; status: "open" | "accepted" | "done" | "returned"; returnReason: string | null; doneNote: string | null; runState?: "running" | "review" | null };
+type Asg = { id: string; title: string; description: string; applicantName: string; assigneeId: string; assigneeName: string; dueDate: number | null; sessionId: string | null; status: "open" | "accepted" | "running" | "review" | "done" | "returned"; returnReason: string | null; doneNote: string | null; runState?: "running" | "review" | null };
 type Item =
   | { kind: "assignment"; id: string; title: string; due: number | null; overdue: boolean; assignment: Asg }
   | { kind: "ack"; id: string; title: string; due: null; overdue: false; announcement: Ann }
-  | { kind: "approval"; id: string; title: string; due: null; overdue: false; approval: { name: string; body: string; applicantName: string } }
-  | { kind: "wizard"; id: string; title: string; due: null; overdue: false; wizard: WItem };
+  | { kind: "approval"; id: string; title: string; due: null; overdue: false; approval: { name: string; body: string; applicantName: string; kind?: string } }
+  | { kind: "wizard"; id: string; title: string; due: null; overdue: false; wizard: WItem }
+  | { kind: "register"; id: string; title: string; due: null; overdue: false; register: { groupId: string | null; groupName: string | null; count: number } };
 
 export default function BulletinOverlay() {
   const b = useBulletin();
@@ -109,7 +112,7 @@ function Personal() {
         <button type="button" className="tgb-head" aria-expanded={ex} onClick={() => toggle(k)}>
           <span className="tgb-caret" data-open={ex ? "1" : "0"}><Icon name="chevron" size={13} /></span>
           <span className="tgb-headtitle">{it.title}</span>
-          <span className="tgx-muted tgb-headmeta">{it.kind === "assignment" ? <>{tr((it.assignment.runState ? `asRun_${it.assignment.runState}` : `asStatus_${it.assignment.status}`) as Key)}{it.due ? <> · <span className={it.overdue ? "tgb-over" : ""}>{fmtDay(it.due)}{it.overdue ? ` ${tr("bOverdue")}` : ""}</span></> : null}</> : it.kind === "ack" ? tr("bRequireAck") : it.kind === "wizard" ? (it.wizard.aspect === "skill" ? tr("bKindSkill") : tr("bKindWizard")) : tr("shareRequest")}</span>
+          <span className="tgx-muted tgb-headmeta">{it.kind === "assignment" ? <>{tr((it.assignment.status === "running" || it.assignment.status === "review" ? `asRun_${it.assignment.status}` : `asStatus_${it.assignment.status}`) as Key)}{it.due ? <> · <span className={it.overdue ? "tgb-over" : ""}>{fmtDay(it.due)}{it.overdue ? ` ${tr("bOverdue")}` : ""}</span></> : null}</> : it.kind === "ack" ? tr("bRequireAck") : it.kind === "wizard" ? (it.wizard.aspect === "skill" ? tr("bKindSkill") : tr("bKindWizard")) : it.kind === "register" ? tr("rqTitle") : tr(it.approval.kind === "n8n_mcp_write" ? "bKindN8nWrite" : "shareRequest")}</span>
         </button>
         {it.kind === "assignment" && (<>
           {ex && it.assignment.description && <div style={{ whiteSpace: "pre-wrap", margin: "6px 0" }}>{it.assignment.description}</div>}
@@ -130,12 +133,14 @@ function Personal() {
           </div>
         </>)}
         {it.kind === "wizard" && <div style={{ marginTop: 8 }}><WizardPersonal item={it.wizard} admin={me?.role === "admin"} onDone={() => void load()} after={closeBulletin} /></div>}
+        {it.kind === "register" && (
+          <div style={{ marginTop: 8 }}><button className="tgx-btn primary" data-go-approvals onClick={() => { focusRequestGroup(it.register.groupId); closeBulletin(); openSettings(me?.role === "admin" ? "users" : "userlog"); }}>{tr("rqGo")}</button></div>)}
         {it.kind === "approval" && (<>
           {ex && <pre style={{ whiteSpace: "pre-wrap", margin: "8px 0", font: "inherit" }}>{it.approval.body}</pre>}
           <div className="tgx-muted" style={{ fontSize: 12 }}>{tr("asBy")}: {it.approval.applicantName}</div>
           <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
-            <button className="tgx-btn primary" onClick={() => ask(tr("cfApprove", { name: it.approval.name }), tr("approve"), () => act(`admin/workorders/${it.id}/decide`, { approve: true }))}>{tr("approve")}</button>
-            <button className="tgx-btn" onClick={() => ask(tr("cfReject", { name: it.approval.name }), tr("reject"), () => act(`admin/workorders/${it.id}/decide`, { approve: false }))}>{tr("reject")}</button>
+            <button className="tgx-btn primary" onClick={() => ask(tr(it.approval.kind === "prompt_share" ? "cfApprove" : "cfApproveN", { name: it.approval.name }), tr("approve"), () => act(`admin/workorders/${it.id}/decide`, { approve: true }))}>{tr("approve")}</button>
+            <button className="tgx-btn" onClick={() => ask(tr(it.approval.kind === "prompt_share" ? "cfReject" : "cfRejectN", { name: it.approval.name }), tr("reject"), () => act(`admin/workorders/${it.id}/decide`, { approve: false }))}>{tr("reject")}</button>
           </div>
         </>)}
       </div>); })}
@@ -316,10 +321,10 @@ function Orders({ scope }: { scope: "mine" | "all" }) {
     {error && <div className="tgx-err" role="alert">{error}</div>}
     {rows === null ? <div className="tgx-muted">{tr("loading")}</div> : rows.length === 0 && <div className="tgx-muted">{tr("asNone")}</div>}
     {rows?.map((a) => {
-      const late = a.dueDate !== null && Math.floor(a.dueDate / 86_400_000) * 86_400_000 < today && (a.status === "open" || a.status === "accepted");
+      const late = a.dueDate !== null && Math.floor(a.dueDate / 86_400_000) * 86_400_000 < today && (a.status === "open" || a.status === "accepted" || a.status === "running" || a.status === "review");
       return (
         <div className="tgx-card" key={a.id}>
-          <div className="tgb-row"><strong>{a.title}</strong><span className="tgx-badge">{tr(`asStatus_${a.status}` as Key)}</span></div>
+          <div className="tgb-row"><strong>{a.title}</strong><span className="tgx-badge">{tr((a.status === "running" || a.status === "review" ? `asRun_${a.status}` : `asStatus_${a.status}`) as Key)}</span></div>
           {a.description && <div style={{ whiteSpace: "pre-wrap", margin: "6px 0" }}>{a.description}</div>}
           <div className="tgx-muted" style={{ fontSize: 12 }}>{tr("asBy")}: {a.applicantName} · {tr("asTo")}: {a.assigneeName}{a.dueDate ? <> · {overdueMark(a.dueDate, late)}</> : null}</div>
           {a.returnReason && <div style={{ marginTop: 4 }}>{tr("asReason")}: {a.returnReason}</div>}

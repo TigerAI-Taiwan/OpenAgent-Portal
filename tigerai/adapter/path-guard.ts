@@ -3,6 +3,7 @@ import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 import { realpathSync } from "node:fs";
 import { resolve, sep } from "node:path";
 import { addonAllowsMcpServer } from "../addons/registry";
+import { isConnectorServer } from "../n8nmcp/runtime-templates";
 
 /**
  * pi's read / grep / find / ls tools take any path the server process can read.
@@ -49,9 +50,10 @@ export function createPathGuard(cwd: string, extraRoots: string[] = []): InlineE
     factory: (pi) => {
       pi.on("tool_call", (event) => {
         // MCP tools of servers the operator put in a global mcp.json are not for restricted sessions;
-        // MCP servers that an active add-on package owns are allowed here; the package checks them per person itself.
+        // MCP servers of the system connectors (n8n in the community edition; more with an active add-on package) are allowed here;
+        // the connector extension checks the person's groups on every call itself.
         const server = /^mcp__(.+?)__/.exec(event.toolName)?.[1];
-        if (event.toolName.startsWith("mcp__") && !(server && addonAllowsMcpServer(server))) {
+        if (event.toolName.startsWith("mcp__") && !(server && (isConnectorServer(server) || addonAllowsMcpServer(server)))) {
           return { block: true, reason: "This tool is not available in this conversation." };
         }
         if (!FENCED.has(event.toolName)) return undefined;

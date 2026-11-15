@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: LicenseRef-TigerAI-SUL-Draft
 import { tgEnabled } from "../config";
+import { sweepLeaverKeys } from "../org/handover";
 import { isAddonActive } from "../addons/registry";
 import { EXTERNAL_TICK_FRESH_MS, lastExternalTick, recordBuiltinPass, tick, type TickResult } from "./engine";
 
@@ -30,6 +31,7 @@ export function externalInCharge(now = Date.now()): boolean {
 }
 
 export async function schedulerPass(now = Date.now()): Promise<{ stoodDown: true } | { stoodDown: false; result: TickResult }> {
+  try { sweepLeaverKeys(now); } catch (e) { console.error("[tigerai] leaver key sweep failed:", e instanceof Error ? e.message : e); }
   if (externalInCharge(now)) return { stoodDown: true };
   const result = await tick(now);
   recordBuiltinPass(now);

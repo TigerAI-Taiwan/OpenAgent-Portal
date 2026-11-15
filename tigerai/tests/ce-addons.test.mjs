@@ -63,10 +63,10 @@ test("community build: no package is compiled in, nothing is active, the 顧問�
   assert.deepEqual(reg.addonViews(), []);
   assert.equal(reg.isAddonActive("consultant"), false);
   assert.deepEqual(reg.addonSessionExtensions({ sessionId: "s", cwd: "/x" }), []);
-  assert.equal(reg.addonAllowsMcpServer("n8n_x"), false, "no MCP server is allowed for a member in the community edition");
+  assert.equal(reg.addonAllowsMcpServer("n8n_x"), false, "no add-on allows an MCP server in the community edition (the n8n connector is the community edition's own)");
 });
 
-test("add-on routes and hooks do not exist: 404 for the connectors, the n8n MCP and the schedule endpoint; webhooks and hook keys stay", async () => {
+test("add-on routes and hooks do not exist: 404 for the old n8n MCP route and the schedule endpoint; webhooks and hook keys stay", async () => {
   const admin = acc.createUser(null, { email: "a@example.com", name: "Admin", role: "admin", password: "Test-Pass-12345!", mustChange: false }).user;
   const member = acc.createUser(null, { email: "m@example.com", name: "Member", role: "member", password: "Test-Pass-12345!", mustChange: false }).user;
   const call = async (u, method, path) => {
@@ -74,9 +74,9 @@ test("add-on routes and hooks do not exist: 404 for the connectors, the n8n MCP 
     return res.status;
   };
   assert.equal(await call(member, "GET", "n8n/apps"), 200, "n8n webhook apps are a community feature");
-  assert.equal(await call(member, "GET", "connectors"), 404, "connectors");
-  for (const p of ["admin/connectors", "admin/n8n/mcp", "admin/n8n/schedule", "admin/n8n/schedule-template"]) assert.equal(await call(admin, "GET", p), 404, p);
-  assert.equal(await call(admin, "POST", "admin/connectors"), 404);
+  assert.equal(await call(member, "GET", "connectors"), 200, "the n8n MCP connection is a community feature (the demo of MCP); see ce-n8nmcp.test.mjs");
+  assert.equal(await call(admin, "GET", "admin/connectors"), 200);
+  for (const p of ["admin/n8n/mcp", "admin/n8n/schedule", "admin/n8n/schedule-template"]) assert.equal(await call(admin, "GET", p), 404, p);
   for (const p of ["admin/n8n/webhooks", "admin/n8n/keys"]) assert.equal(await call(admin, "GET", p), 200, `${p} stays in the community edition`);
   const res = await handle(new Request("http://x/api/tg/addons", { headers: { "x-tg-uid": member.id } }), ["addons"]);
   assert.deepEqual((await res.json()).addons, []);

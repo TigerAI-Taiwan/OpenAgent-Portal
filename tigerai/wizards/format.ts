@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: LicenseRef-TigerAI-SUL-Draft
 import type { Source } from "./facts";
 
+/** Strips end punctuation from model text so a template can add its own 。 without producing 「。。」. */
+export const stripEnd = (s: string): string => s.trim().replace(/[。.]+$/u, "");
+/** Collapses a doubled full stop (a template 。 after text that already ended with one). */
+export const collapseStops = (s: string): string => s.replace(/。{2,}/g, "。");
+
 /**
  * The strict line format a wizard asks the model for, and the server-side check of what comes back.
  * A local model is weak: it is asked for one line per finding (not JSON, not Markdown), and the server throws away every

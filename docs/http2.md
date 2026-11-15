@@ -10,7 +10,7 @@ Pi Web already lets go of a hidden tab's idle streams after 30 seconds, which is
 
 ```bash
 pi-web
-caddy reverse-proxy --from localhost:8443 --to 127.0.0.1:30141
+caddy reverse-proxy --from localhost:8443 --to 127.0.0.1:30161
 ```
 
 Open <https://localhost:8443>. The first run asks for your password to add Caddy's local certificate authority to the system trust store (`caddy trust`); use the address you passed to `--from`, since the certificate is issued for that name. Caddy forwards event streams without buffering and keeps the `Host` header, so Pi Web's host and origin checks accept the requests.
@@ -19,4 +19,4 @@ To check, open the browser's developer tools, Network panel, and look at the Pro
 
 ## Remote access
 
-For another device, a proxy that serves your own domain or private network name works the same way, for example a Caddyfile site block with `reverse_proxy 127.0.0.1:30141`, or `tailscale serve` on a Tailscale network. Keep Pi Web bound to `127.0.0.1` behind it, keep a password set (`PI_WEB_PASSWORD`), and add the external hostname to `PI_WEB_ALLOWED_HOSTS`, as described under Remote Access in the [README](../README.md#remote-access).
+For another device, a proxy that serves your own domain or private network name works the same way, for example a Caddyfile site block with `reverse_proxy 127.0.0.1:30161`, or `tailscale serve` on a Tailscale network. Keep Pi Web bound to `127.0.0.1` behind it, keep a password set (`PI_WEB_PASSWORD`), and add the external hostname to `PI_WEB_ALLOWED_HOSTS`, as described under Remote Access in the [README](../README.md#remote-access).

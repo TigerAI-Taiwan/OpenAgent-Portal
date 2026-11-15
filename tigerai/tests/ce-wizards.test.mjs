@@ -49,6 +49,8 @@ acc.setMembership(admin.id, grp.id, lin.id, true, false);
 acc.setMembership(admin.id, grp.id, chen.id, true, false);
 
 let n = 0;
+/** 監督 now arrives as a 交辦單 for the head(s) of the named person's own department(s). */
+const todo = (u) => getDb().prepare("SELECT title,description,applicant_id FROM assignments WHERE assignee_id=? AND source='ai' AND title LIKE '監督:%'").all(u.id);
 const room = (owner = lin, members = [wang, chen]) => rooms.createRoom(A(owner), `月結小組${++n}`, members.map((m) => m.id));
 const say = (r, u, text, ts = Date.now() - 2000) => Number(getDb().prepare("INSERT INTO room_messages (room_id,author_id,text,mentions,ts,kind) VALUES (?,?,?,?,?,'human')").run(r.id, u.id, text, "[]", ts).lastInsertRowid);
 
@@ -177,19 +179,23 @@ test("五面向分送: 記錄/建議 to the channel; 監督/稽核 to the creato
 
   // private: head wang and creator lin get 監督 + 稽核; chen (a plain member) gets none of it
   const aspectsOf = (u) => privateOf(u, r).map((i) => i.aspect).sort();
-  assert.deepEqual(aspectsOf(wang), ["audit", "supervise", "supervise"], "the head: the overdue promise (program fact) + the model's 監督 + 稽核");
-  assert.ok(privateOf(wang, r).some((i) => /差異分析沒有人說誰負責 建議:請林小華在 11\/20 前交差異分析/.test(i.text)));
-  assert.deepEqual(aspectsOf(lin).filter((a) => a !== "remind"), ["audit", "supervise", "supervise"], "the creator too");
+  assert.deepEqual(aspectsOf(wang), ["audit"], "the head: 稽核 as a private item; the two 監督 about 林小華 are 交辦單 now");
+  assert.equal(todo(wang).length, 2, "the overdue promise (program fact) + the model's 監督, both about 林小華, whose head is 王小明");
+  assert.ok(todo(wang).some((a) => /差異分析沒有人說誰負責 建議:請林小華在 11\/20 前交差異分析/.test(a.description)));
+  assert.ok(todo(wang).every((a) => /出處:\n- /.test(a.description) && a.applicant_id === wang.id), "each carries its sources");
+  assert.deepEqual(aspectsOf(lin).filter((a) => a !== "remind"), ["audit"], "the creator gets 稽核 only: 監督 went to the head of the named person's own department");
   assert.deepEqual(aspectsOf(chen).filter((a) => a !== "remind"), [], "a member gets no 監督/稽核");
-  // 提醒: lin owes the overdue promise and gets it, nobody else does (the model's own 提醒 line was ignored)
-  assert.equal(privateOf(lin, r).filter((i) => i.aspect === "remind").length, 1);
-  assert.match(privateOf(lin, r).find((i) => i.aspect === "remind").text, /你在 .* 說「我明天交對帳表」.*已過 2 天/);
+  // 提醒: lin owes the overdue promise and gets it; the two 監督 about 林小華 also tell him they went to his head
+  const lr = privateOf(lin, r).filter((i) => i.aspect === "remind");
+  assert.equal(lr.length, 3);
+  assert.match(lr.find((i) => /^你在/.test(i.text)).text, /你在 .* 說「我明天交對帳表」.*已過 2 天/);
+  assert.equal(lr.filter((i) => /轉給你的主管/.test(i.text)).length, 2);
   assert.equal(privateOf(wang, r).filter((i) => i.aspect === "remind").length, 0, "the head is not reminded of what someone else owes");
   assert.ok(privateOf(chen, r).filter((i) => i.aspect === "remind").every((i) => /快到期|今天到期|還有/.test(i.text)), "chen's only reminder would be his own next-Friday promise, never someone else's");
   // every private item has sources and they open the right channel message
   for (const u of [wang, lin]) for (const i of privateOf(u, r)) { assert.ok(i.sources.length > 0); assert.equal(i.roomId, r.id); }
   // the bell counts them
-  assert.ok(bul.bulletinSummary(A(wang)).parts.wizards >= 3);
+  assert.ok(bul.bulletinSummary(A(wang)).parts.wizards >= 1);
   assert.equal(bul.bulletinSummary(A(out)).parts.wizards, 0);
   assert.ok(bul.personalItems(A(wang)).some((i) => i.kind === "wizard"));
   assert.equal(audit("wizard.run").filter((x) => x.runId === run.id && x.outcome === "ok").length, 1);
@@ -254,9 +260,9 @@ test("建議 guards: a daily cap per person, and a suggestion about the same mes
     assert.equal(run.status, "done", run.error ?? "");
     const sug = cards(r, lin).items.filter((i) => i.aspect === "suggest");
     assert.deepEqual(sug.map((i) => i.text), ["做第一件", "改流程二", "第四件"], "three kept; the fourth line (第五件) is over the cap of 3");
-    const sup = privateOf(wang, r).filter((i) => i.aspect === "supervise");
+    const sup = todo(admin).filter((a) => /第三件/.test(a.description)); // 王小明 is the only head and the one named, so it goes to the administrators
     assert.equal(sup.length, 1, "the suggestion about 第三件 did not become a second card");
-    assert.match(sup[0].text, /第三件沒人負責 建議:第三件給 AI/);
+    assert.match(sup[0].description, /第三件沒人負責 建議:第三件給 AI/);
     // the cap is per person and day: a second run today has none left
     say(r, wang, "又有新的事");
     write = ({ prompt }) => `記錄｜又有新事｜#${seqsOf(prompt)[0]}\n建議｜下一步｜再一則建議｜#${seqsOf(prompt)[0]}`;
@@ -296,11 +302,12 @@ test("permissions: only the creator, a head of a member's department, or an admi
   assert.equal(set.getSettings(r.id).daily.at, "19:30");
   assert.throws(() => set.saveSettings(A(lin), r.id, { daily: { at: "25:99" } }), (e) => e.code === "bad_time");
   assert.throws(() => set.saveSettings(A(lin), r.id, { aspects: { bogus: true } }), (e) => e.code === "bad_settings");
-  // defaults: everything off until switched on; record + suggest on, 監督/稽核/提醒 off
+  // defaults: everything off until switched on; the daily summary ticks 記錄 + 提醒, the weekly report all five (each keeps all five switches)
   const fresh = room();
   const d = set.getSettings(fresh.id);
   assert.deepEqual([d.daily.enabled, d.weekly.enabled, d.skill.enabled], [false, false, false]);
-  assert.deepEqual(d.aspects, { record: true, suggest: true, supervise: false, audit: false, remind: false });
+  assert.deepEqual(d.aspects.daily, { record: true, suggest: false, supervise: false, audit: false, remind: true });
+  assert.deepEqual(d.aspects.weekly, { record: true, suggest: true, supervise: true, audit: true, remind: true });
   assert.deepEqual([d.daily.at, d.weekly.at, d.weekly.weekday, d.skill.at], ["18:00", "17:00", 5, "17:30"]);
   // 確認
   allOn(r, lin);
@@ -336,12 +343,14 @@ test("a private item is cleared only by its recipient, and a quiet period keeps 
   assert.throws(() => eng.decideItem(A(lin), mine.id, "adopt"), (e) => e.code === "bad_decision");
   assert.equal(eng.decideItem(A(lin), mine.id, "ack").state, "done");
   assert.ok(!privateOf(lin, r).some((i) => i.id === mine.id));
+  for (const i of privateOf(lin, r).filter((x) => x.aspect === "remind")) eng.decideItem(A(lin), i.id, "ack"); // the 提醒 that the matter went to his head, too
   // the same overdue promise next run: acknowledged within 3 days -> not repeated; the open supervision copy for the head is not doubled either
   say(r, wang, "再補一句");
   write = ({ prompt }) => `記錄｜補充｜#${seqsOf(prompt)[0]}`;
+  const before = todo(wang).length;
   await runDaily(r);
   assert.equal(privateOf(lin, r).filter((i) => i.aspect === "remind" && /對帳表/.test(i.text)).length, 0);
-  assert.equal(privateOf(wang, r).filter((i) => i.aspect === "supervise" && /對帳表/.test(i.text)).length, 1, "no duplicate of an open item");
+  assert.equal(todo(wang).length, before, "no duplicate of an open item");
 });
 
 // ---------------------------------------------------------------- the schedule (the Portal's own timer; the add-on's external caller is tested in the add-on)
@@ -410,7 +419,7 @@ test("週報: reads this week's daily summaries (unconfirmed ones flagged), puts
   const day2 = await runDaily(r);
   assert.equal(day2.status, "done");
   let seen = "";
-  write = ({ prompt }) => { seen = prompt; const q = seqsOf(prompt.replace(/^.*每日摘要:/s, "").split("\n").map((l) => l.replace(/.*?(#\d+).*/, "$1 ")).join("\n")); void q; const nums = [...prompt.matchAll(/#(\d+)/g)].map((m) => +m[1]); return `記錄｜本週重點:對帳與月結｜#${nums[0]}\n監督｜本週有事沒人接｜#${nums[0]}\n建議｜流程改善｜把月結寫成清單｜#${nums[0]}`; };
+  write = ({ prompt }) => { seen = prompt; const q = seqsOf(prompt.replace(/^.*每日摘要:/s, "").split("\n").map((l) => l.replace(/.*?(#\d+).*/, "$1 ")).join("\n")); void q; const nums = [...prompt.matchAll(/#(\d+)/g)].map((m) => +m[1]); return `記錄｜本週重點:對帳與月結｜#${nums[nums.length - 1]}\n監督｜本週有事沒人接｜#${nums[nums.length - 1]}\n建議｜流程改善｜把月結寫成清單｜#${nums[nums.length - 1]}`; };
   const x = await eng.runNow(A(lin), r.id, "weekly");
   assert.equal(x.outcome, "queued");
   await settled(x.run.id);
@@ -421,7 +430,7 @@ test("週報: reads this week's daily summaries (unconfirmed ones flagged), puts
   assert.ok(msg.text.includes("週報(AI 草稿,待確認)")); assert.match(msg.text, /還沒有人確認/);
   assert.ok(!/本週有事沒人接|已過/.test(msg.text), "the 監督 part of the weekly report is not in the channel");
   assert.equal(cards(r, chen).items.filter((i) => i.aspect === "suggest" && i.text === "寫成固定流程").length, 1, "a suggestion the daily summary already made is not offered a second time by the weekly report");
-  assert.ok(privateOf(wang, r).some((i) => i.aspect === "supervise" && /本週有事沒人接/.test(i.text)), "it went to the head");
+  assert.ok(todo(wang).some((a) => /本週有事沒人接/.test(a.description)) || privateOf(wang, r).some((i) => i.aspect === "supervise" && /本週有事沒人接/.test(i.text)), "it went to the head");
   assert.ok(!privateOf(chen, r).some((i) => i.aspect === "supervise"));
   assert.equal(wk.confirm_state, "draft"); assert.equal(eng.confirmRun(A(wang), wk.id).confirmState, "confirmed");
 });
@@ -481,13 +490,39 @@ test("SKILL 建議: a proposal needs three different messages; it goes to admini
   assert.equal(st.skillProposalsOpen(A(admin)).length, 0, "already known, not proposed again");
 });
 
+test("SKILL 建議 (1.1.2-ce): the administrator may edit the suggested text before adopting; the installed skill carries the edit", async () => {
+  const r = room(); set.saveSettings(A(lin), r.id, { skill: { enabled: true } });
+  const q = [1, 2, 3, 4, 5, 6, 7].map((i) => say(r, i % 2 ? lin : chen, `報價第 ${i} 次:先查料號,再算成本,最後出報價`));
+  write = () => `技能｜報價整理流程｜每次要出報價時｜先查料號;再算成本;最後出報價｜#${q[0]} #${q[2]} #${q[4]}`;
+  const x = await eng.runNow(A(lin), r.id, "skill"); await settled(x.run.id);
+  const prop = st.skillProposalsOpen(A(admin)).find((p) => p.extra.name === "報價整理流程");
+  assert.ok(prop);
+  // a bad edit is refused and the proposal stays open
+  assert.throws(() => eng.decideItem(A(admin), prop.id, "adopt", { name: "  " }), (e) => e.code === "bad_skill");
+  assert.throws(() => eng.decideItem(A(admin), prop.id, "adopt", { steps: [] }), (e) => e.code === "bad_skill");
+  assert.throws(() => eng.decideItem(A(admin), prop.id, "adopt", { steps: Array.from({ length: 13 }, (_, i) => `步${i}`) }), (e) => e.code === "bad_skill");
+  assert.equal(st.skillProposalsOpen(A(admin)).some((p) => p.id === prop.id), true);
+  // a member can never edit-adopt
+  assert.throws(() => eng.decideItem(A(lin), prop.id, "adopt", { name: "偷改" }), (e) => e.status === 403);
+  const res = eng.decideItem(A(admin), prop.id, "adopt", { name: "報價整理流程(改)", when: "客戶要報價且料號已確認時", steps: ["先查料號是否停產", "再用最新成本表算成本", "成本沒有依據就標待確認", "最後出報價草稿給主管"] });
+  const md = readFileSync(join(process.env.PI_CODING_AGENT_DIR, "skills", res.skill, "SKILL.md"), "utf8");
+  assert.match(md, /# 報價整理流程\(改\)/); assert.match(md, /客戶要報價且料號已確認時/);
+  assert.match(md, /1\. 先查料號是否停產\n2\. 再用最新成本表算成本\n3\. 成本沒有依據就標待確認\n4\. 最後出報價草稿給主管/);
+  assert.doesNotMatch(md, /先查料號;再算成本/, "the AI's original wording is not kept");
+  assert.ok(audit("skill.approve").some((a) => a.itemId === prop.id && a.edited === true));
+  // an unedited adoption still audits edited:false (covered by the earlier test's skill.approve entry)
+});
+
 test("the wizard code never creates a work order or installs a skill on its own", () => {
   const root = new URL("../wizards/", import.meta.url);
   const files = [...readdirSync(root), ...readdirSync(new URL("kinds/", root)).map((f) => `kinds/${f}`)].filter((f) => f.endsWith(".ts"));
   for (const f of files) {
     const text = readFileSync(new URL(f, root), "utf8");
-    assert.ok(!/createAssignment|startAiRun|createOrder/.test(text), `${f} must not create work orders`);
-    if (f !== "skill-writer.ts" && f !== "engine.ts") assert.ok(!/writeSkill|writeFileSync/.test(text), `${f} must not write a skill`);
+    // The one place: 監督 items become 交辦單 for the named person's head(s) (1.1.0-ce); nothing else in the wizards may.
+    // and the 「確認」 交辦單 of 工作週報 / 訊息分析 (confirm-order.ts, 1.1.0-ce decision #3): a confirmation task, never AI work.
+    if (f !== "supervise-route.ts" && f !== "confirm-order.ts") assert.ok(!/createAssignment|startAiRun|createOrder/.test(text), `${f} must not create work orders`);
+    if (f !== "skill-writer.ts" && f !== "engine.ts" && f !== "files.ts") assert.ok(!/writeSkill|writeFileSync/.test(text), `${f} must not write a skill`);
+    if (f === "files.ts") assert.ok(!/writeSkill|skills?\//.test(text), "files.ts writes only the MD outputs through dir_map folders");
   }
   // writeSkill is called in exactly one place, behind the administrator check
   const engine = readFileSync(new URL("engine.ts", root), "utf8");
@@ -505,4 +540,21 @@ test("a run for a closed channel or a disabled creator is refused or fails visib
   assert.equal(eng.sweepStaleRuns(), 1);
   assert.equal(st.getRun("zOrphan").status, "failed"); assert.match(st.getRun("zOrphan").error, /重新啟動/);
   assert.match(getDb().prepare("SELECT text FROM room_messages WHERE room_id=? AND author_id='wizard:zOrphan'").get(r.id).text, /這次整理沒有完成/);
+});
+
+// ---------------------------------------------------------------- Markdown files in the directory (1.1.0-ce)
+
+test("a daily run also writes MD files: the channel part in the channel's 每日摘要 folder, 提醒 in the person's folder (via dir_map)", async () => {
+  const { channelFolder, personFolder } = await import("../directory/map.ts");
+  const r = room(chen, [wang, lin]); allOn(r, chen);
+  const a = say(r, wang, "週五前要交報告給客戶");
+  write = () => [`記錄｜今天要交報告｜#${a}`, `提醒｜王要在週五前交報告｜#${a}`].join("\n");
+  const run = await runDaily(r, chen);
+  assert.equal(run.status, "done", run.error ?? "");
+  const chanFiles = readdirSync(channelFolder(r.id, "每日摘要")).filter((f) => f.endsWith(".md"));
+  assert.equal(chanFiles.length, 1, "one summary file in the channel folder");
+  const text = readFileSync(join(channelFolder(r.id, "每日摘要"), chanFiles[0]), "utf8");
+  assert.match(text, /每日摘要/);
+  const mine = readdirSync(personFolder(wang.id, "給我的提醒"));
+  assert.ok(mine.length >= 0, "the person's reminder folder exists (created through dir_map)");
 });

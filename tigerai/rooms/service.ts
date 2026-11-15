@@ -13,8 +13,11 @@ type Actor = { id: string; role: Role };
 export interface RoomRow {
   id: string; name: string; owner_id: string; bound_session_id: string | null; created_at: number;
   closed_at: number | null; closed_by: string | null; deleted_at: number | null; deleted_by: string | null;
+  /** The unit this channel is filed under (shows in the directory only; it grants nobody anything). NULL = 跨部門頻道. */
+  unit_id?: string | null;
+  /** 1 = that unit's own channel: 換部門 moves people in and out of it by itself. Other filed channels are 專案頻道. */
+  is_unit_default?: number;
 }
-export const PURGE_AFTER_MS = 30 * 24 * 3600_000;
 const HEAD_VIEW_AUDIT_MS = 3600_000;
 export interface MessageRow { seq: number; room_id: string; author_id: string; text: string; mentions: string; ts: number; kind: string }
 
@@ -57,7 +60,6 @@ function auditHeadView(actor: Actor, roomId: string): void {
  * A head who is not a member may read; each read is audited (at most once an hour per head and room).
  */
 export function requireRoom(actor: Actor, roomId: string, opts: { allowDeleted?: boolean } = {}): RoomRow {
-  purgeExpired();
   const room = getRoom(roomId);
   if (!room || (room.deleted_at && !(opts.allowDeleted && actor.role === "admin"))) throw new ServiceError("not_found", "No such room", 404);
   if (actor.role === "admin" || isRoomMember(roomId, actor.id)) return room;
@@ -137,7 +139,7 @@ export function reopenRoom(actor: Actor, roomId: string): void {
 
 const nameOf = (id: string): string => (getDb().prepare("SELECT name FROM users WHERE id=?").get(id) as { name: string } | undefined)?.name ?? "?";
 
-/** Admin only. Soft delete: hidden from everybody, restorable for 30 days. */
+/** Admin only. 封存 (archive): hidden from everybody, restorable at any time. Nothing is ever removed automatically (decision 10); see purgeRoom. */
 export function deleteRoom(actor: Actor, roomId: string): void {
   if (actor.role !== "admin") throw new ServiceError("forbidden", "Administrator only", 403);
   const room = requireRoom(actor, roomId);
@@ -147,7 +149,6 @@ export function deleteRoom(actor: Actor, roomId: string): void {
 
 export function restoreRoom(actor: Actor, roomId: string): void {
   if (actor.role !== "admin") throw new ServiceError("forbidden", "Administrator only", 403);
-  purgeExpired();
   const room = getRoom(roomId);
   if (!room || !room.deleted_at) throw new ServiceError("not_found", "No such deleted room", 404);
   getDb().prepare("UPDATE rooms SET deleted_at=NULL, deleted_by=NULL WHERE id=?").run(roomId);
@@ -156,33 +157,35 @@ export function restoreRoom(actor: Actor, roomId: string): void {
 
 export function listDeletedRooms(actor: Actor) {
   if (actor.role !== "admin") throw new ServiceError("forbidden", "Administrator only", 403);
-  purgeExpired();
-  const rows = getDb().prepare("SELECT r.id, r.name, r.deleted_at AS deletedAt, COALESCE(u.name,'?') AS deletedByName FROM rooms r LEFT JOIN users u ON u.id=r.deleted_by WHERE r.deleted_at IS NOT NULL ORDER BY r.deleted_at DESC").all() as unknown as { id: string; name: string; deletedAt: number; deletedByName: string }[];
-  return rows.map((r) => ({ ...r, daysLeft: Math.max(0, Math.ceil((r.deletedAt + PURGE_AFTER_MS - Date.now()) / 86400_000)) }));
+  return getDb().prepare("SELECT r.id, r.name, r.deleted_at AS deletedAt, COALESCE(u.name,'?') AS deletedByName, (SELECT COUNT(*) FROM room_messages m WHERE m.room_id=r.id) AS messages FROM rooms r LEFT JOIN users u ON u.id=r.deleted_by WHERE r.deleted_at IS NOT NULL ORDER BY r.deleted_at DESC").all() as unknown as { id: string; name: string; deletedAt: number; deletedByName: string; messages: number }[];
 }
 
 /**
- * Lazy purge: runs when rooms are read. Messages are append-only by trigger, so the purge drops that
- * trigger inside its own transaction and puts it back before committing.
+ * The ONLY way a channel's data ever goes away (decision 6 and 10): an administrator removes an archived channel by hand,
+ * after two confirmations. The first is `confirm: true`; the second is typing the channel's exact name. Messages are
+ * append-only by trigger, so the purge drops that trigger inside its own transaction and puts it back before committing.
+ * The audit row is kept (it is append-only too) and records who removed what and how much.
  */
-export function purgeExpired(now = Date.now()): number {
+export function purgeRoom(actor: Actor, roomId: string, input: { confirm?: unknown; typedName?: unknown }): void {
+  if (actor.role !== "admin") throw new ServiceError("forbidden", "Administrator only", 403);
+  const room = getRoom(roomId);
+  if (!room || !room.deleted_at) throw new ServiceError("not_archived", "Only an archived channel can be removed permanently", 409);
+  if (input.confirm !== true) throw new ServiceError("confirm_required", "Confirm first", 409);
+  if (String(input.typedName ?? "") !== room.name) throw new ServiceError("confirm_name", "Type the channel name exactly to confirm", 409);
   const db = getDb();
-  const old = db.prepare("SELECT id, name FROM rooms WHERE deleted_at IS NOT NULL AND deleted_at<=?").all(now - PURGE_AFTER_MS) as unknown as { id: string; name: string }[];
-  for (const r of old) {
-    inTransaction(() => {
-      db.exec("DROP TRIGGER IF EXISTS rm_no_delete");
-      try {
-        db.prepare("DELETE FROM room_messages WHERE room_id=?").run(r.id);
-      } finally {
-        db.exec("CREATE TRIGGER IF NOT EXISTS rm_no_delete BEFORE DELETE ON room_messages BEGIN SELECT RAISE(ABORT, 'room messages are append-only'); END");
-      }
-      for (const t of ["room_members", "room_reads", "room_assistants"]) db.prepare(`DELETE FROM ${t} WHERE room_id=?`).run(r.id);
-      db.prepare("DELETE FROM rooms WHERE id=?").run(r.id);
-    });
-    if (/^r[0-9a-f]{12}$/.test(r.id)) { try { rmSync(roomDir(r.id), { recursive: true, force: true }); } catch { /* best effort */ } }
-    writeAudit("room.purge", null, { roomId: r.id, name: r.name });
-  }
-  return old.length;
+  const messages = (db.prepare("SELECT COUNT(*) AS n FROM room_messages WHERE room_id=?").get(roomId) as { n: number }).n;
+  inTransaction(() => {
+    db.exec("DROP TRIGGER IF EXISTS rm_no_delete");
+    try {
+      db.prepare("DELETE FROM room_messages WHERE room_id=?").run(roomId);
+    } finally {
+      db.exec("CREATE TRIGGER IF NOT EXISTS rm_no_delete BEFORE DELETE ON room_messages BEGIN SELECT RAISE(ABORT, 'room messages are append-only'); END");
+    }
+    for (const t of ["room_members", "room_reads", "room_assistants", "wizard_settings"]) db.prepare(`DELETE FROM ${t} WHERE room_id=?`).run(roomId);
+    db.prepare("DELETE FROM rooms WHERE id=?").run(roomId);
+  });
+  if (/^r[0-9a-f]{12}$/.test(roomId)) { try { rmSync(roomDir(roomId), { recursive: true, force: true }); } catch { /* best effort */ } }
+  writeAudit("room.purge", actor.id, { roomId, name: room.name, messages, manual: true });
 }
 
 /** An admin or a head joins a room they are not in (speaking notifies real people, so it is an explicit step). */
@@ -200,7 +203,23 @@ export function roomIsOpen(roomId: string): boolean {
   return !!r && !r.closed_at && !r.deleted_at;
 }
 
-export function createRoom(actor: Actor, name: string, memberIds: string[] = []): RoomRow {
+/** File a channel under a unit (or under none = 跨部門頻道). The owner and administrators may; it changes the directory, never who can open the channel. */
+export function setRoomUnit(actor: Actor, roomId: string, unitId: string | null, isDefault = false): RoomRow {
+  const room = requireRoom(actor, roomId);
+  requireManager(actor, room);
+  const db = getDb();
+  if (unitId && !db.prepare("SELECT 1 FROM groups WHERE id=?").get(unitId)) throw new ServiceError("bad_unit", "No such unit", 400);
+  if (isDefault && !unitId) throw new ServiceError("bad_unit", "A cross-unit channel cannot be a unit's own channel", 400);
+  if (isDefault && actor.role !== "admin") throw new ServiceError("forbidden", "Only an administrator names a unit's own channel", 403);
+  inTransaction(() => {
+    if (isDefault) db.prepare("UPDATE rooms SET is_unit_default=0 WHERE unit_id=? AND id<>?").run(unitId, roomId);
+    db.prepare("UPDATE rooms SET unit_id=?, is_unit_default=? WHERE id=?").run(unitId, isDefault ? 1 : 0, roomId);
+  });
+  writeAudit("room.unit", actor.id, { roomId, to: unitId ?? "", scope: isDefault ? "default" : "project" });
+  return getRoom(roomId)!;
+}
+
+export function createRoom(actor: Actor, name: string, memberIds: string[] = [], unitId: string | null = null): RoomRow {
   const clean = String(name ?? "").trim();
   if (!clean || clean.length > 80) throw new ServiceError("bad_name", "Room name is required (max 80 characters)");
   const id = `r${randomUUID().replace(/-/g, "").slice(0, 12)}`;
@@ -216,6 +235,7 @@ export function createRoom(actor: Actor, name: string, memberIds: string[] = [])
   mkdirSync(roomDir(id), { recursive: true, mode: 0o700 });
   writeAudit("room.create", actor.id, { roomId: id, name: clean });
   for (const uid of memberIds) if (uid !== actor.id) addMember(actor, id, uid);
+  if (unitId) setRoomUnit(actor, id, unitId);
   return getRoom(id)!;
 }
 
@@ -244,7 +264,6 @@ export function listMembers(roomId: string): { id: string; name: string }[] {
 }
 
 export function listRooms(actor: Actor): (RoomRow & { unread: number; mentioned: number; isMember: boolean; closed: boolean; myRole: MyRole })[] {
-  purgeExpired();
   const db = getDb();
   const rooms = (actor.role === "admin"
     ? db.prepare("SELECT * FROM rooms WHERE deleted_at IS NULL ORDER BY created_at DESC").all()
@@ -264,12 +283,16 @@ export function listRooms(actor: Actor): (RoomRow & { unread: number; mentioned:
   });
 }
 
-/** `@name` (no spaces: user names cannot contain them) resolved against the room's members only. */
-export function parseMentions(text: string, members: { id: string; name: string }[]): string[] {
+/** `@name` (spaces allowed since v1.1) resolved against the room's members only. */
+export function parseMentions(text: string, members: { id: string; name: string; email?: string }[]): string[] {
+  // Names may contain spaces and are no longer unique (v1.1), so each member's name is looked for in the text (longest first), as the
+  // old Portal did. "@Amy Lin" and "@amy" (e-mail local part) both reach the person; two people with one name are both mentioned.
+  const esc = (v: string) => v.replace(/[-.*+?^${}()|[\]\\]/g, "\\$&");
   const found = new Set<string>();
-  for (const m of text.matchAll(/@([^\s@]+)/g)) {
-    const hit = members.find((u) => u.name.toLowerCase() === m[1].toLowerCase());
-    if (hit) found.add(hit.id);
+  const keys = members.flatMap((u) => [u.name, u.email ? u.email.split("@")[0] : ""].filter((k) => k.trim()).map((k) => ({ id: u.id, key: k.trim() })))
+    .sort((a, b) => b.key.length - a.key.length);
+  for (const { id, key } of keys) {
+    if (new RegExp(`(^|\\s)[@＠]${esc(key)}(?=\\s|$|[,，.。:：;；?？!！、)）])`, "i").test(text)) found.add(id);
   }
   return [...found];
 }
@@ -295,7 +318,7 @@ export function postMessage(actor: Actor, roomId: string, text: string): Message
 export function readMessages(actor: Actor, roomId: string, afterSeq = 0, limit = 200, allowDeleted = false): (MessageRow & { author: string })[] {
   requireRoom(actor, roomId, { allowDeleted });
   return getDb().prepare(
-    "SELECT m.*, COALESCE(u.name, (SELECT a.name FROM agents a WHERE 'agent:' || a.id = m.author_id), (SELECT 'n8n:' || h.name FROM hook_keys h WHERE 'hook:' || h.id = m.author_id), 'AI') AS author FROM room_messages m LEFT JOIN users u ON u.id=m.author_id WHERE m.room_id=? AND m.seq>? ORDER BY m.seq LIMIT ?",
+    "SELECT m.*, COALESCE(u.name, (SELECT a.name FROM agents a WHERE 'agent:' || a.id = m.author_id), (SELECT 'n8n:' || h.name FROM hook_keys h WHERE 'hook:' || h.id = m.author_id), (SELECT '（已刪除的成員）' WHERE m.author_id = 'deleted-member'), 'AI') AS author FROM room_messages m LEFT JOIN users u ON u.id=m.author_id WHERE m.room_id=? AND m.seq>? ORDER BY m.seq LIMIT ?",
   ).all(roomId, afterSeq, Math.min(limit, 500)) as unknown as (MessageRow & { author: string })[];
 }
 

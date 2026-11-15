@@ -6,7 +6,7 @@
 
 - **同一份程式碼、兩種映像。** 社群映像只有公開 repo;顧問映像是「公開 repo + 顧問包」。社群映像裡沒有顧問包的任何程式。
 - **伺服器端擋,不是只藏畫面。** 沒載入或授權無效時:顧問包的 API 路由回 404、它的機器端點(`/api/tigerai/hooks/wizards/tick`)回 404、選單與頁面不存在、AI 對話不載入它的工具。
-- **資料不刪。** 已經有顧問包資料的資料庫(n8n 登記、MCP 連接、金鑰)換成社群映像時,資料原封不動、社群版直接忽略;換回顧問映像並有授權就回來。顧問包的資料表(MCP 連接登記)由顧問包自己建(`init()`),社群版的資料庫從來不會有。
+- **資料不刪。** 已經有顧問包資料的資料庫(n8n 登記、MCP 連接、金鑰)換成社群映像時,資料原封不動、社群版直接忽略;換回顧問映像並有授權就回來。MCP 連接登記表(`n8n_mcp_servers`)現在是社群版的(只有 n8n 範本);其他範本的資料列留在表裡,社群版看不到也不用,換回顧問映像並有授權就回來。
 - 不做顧問角色。顧問的工作是拜訪、訪談、用虎智後台產出顧問包;客戶 Portal 不需要顧問帳號(待 Founder 最後確認)。「顧問服務聯絡窗口」之後若要做,是顧問包的一個掛點(見第 3 節「預留」),社群版這次沒有。
 
 ## 2. 檔案
@@ -39,8 +39,8 @@
 | API 路由 | `routes`(`/api/tg/...`)、`adminRoutes`(`/api/tg/admin/...`,路由器先確認是管理員) | `api/router.ts` |
 | 機器呼叫端點 | `hooks["wizards/tick"]`(`/api/tigerai/hooks/wizards/tick`;上游路由檔 H12 轉進來)。`hooks/agent` 是社群版自己的(n8n 呼叫 Portal) | 路由檔 |
 | AI 對話的 pi 擴充 | `sessionExtensions(ctx)` | `adapter/index.ts startExtensions` |
-| 成員可呼叫的 MCP 伺服器 | `allowsMcpServer(name)` | `adapter/path-guard.ts` |
-| 連接範本(系統連接) | **顧問包自己內部的**範本登錄(`consultant/connectors/templates.ts`),公開樹沒有 | 顧問包 |
+| 成員可呼叫的 MCP 伺服器 | `allowsMcpServer(name)`(其他 MCP;n8n 與顧問範本的連接由社群版的 `isConnectorServer` 放行,每次呼叫再查群組) | `adapter/path-guard.ts` |
+| 連接範本(系統連接) | `connectorTemplates`:顧問包有授權時,Gitea / Zabbix / 自訂範本加進社群版的系統連接頁與 API(`n8nmcp/runtime-templates.ts`);沒有授權時只有 n8n | 社群版 `tigerai/n8nmcp/` |
 | 預留:顧問聯絡帳號 | 虎智在客戶 Portal 設定的「顧問服務聯絡窗口」。這次沒做,也沒有顧問角色;若做,它是顧問包的資料 + 一個設定頁籤,不改角色模型 | 預留 |
 
 瀏覽器端的頁面元件只在**伺服器公告**了對應選單時才會渲染(`GET /api/tg/addons`),所以授權到期不必重建映像,頁面就消失。
@@ -60,14 +60,16 @@
 
 | 項目 | 內容 | 狀態 |
 |---|---|---|
-| 系統連接(MCP 集成區) | n8n、Gitea、Zabbix、自訂 MCP 範本;依群組開放、唯讀工具白名單、金鑰檔、稽核 | 已做(從社群版搬出) |
+| 系統連接的其他範本 | Gitea、Zabbix、自訂 MCP(`connectorTemplates`);頁面、API、金鑰檔、稽核、群組檢查都是社群版 `tigerai/n8nmcp/` 的,n8n 範本也在社群版 | 已做 |
 | n8n 排程 tick | `/api/tigerai/hooks/wizards/tick`:精靈排程改由 n8n 控制,收到後內建排程退讓;n8n 流程範本下載、最後收到時間 | 已做(從社群版搬出) |
 | n8n 與 Gitea 的安裝(docker)與接上 Portal | 在客戶機器用 docker 裝好 n8n 與 Gitea,並接上 Portal:MCP 連接、n8n tick、Gitea 存檔與版本紀錄 | **待做**:Founder 定案顧問包含此項,這次只寫清楚分界,沒有安裝程式 |
 | Gitea 存檔與版本紀錄 | 紀錄存進 Gitea | **待做** |
 | 顧問匯入、全公司部門頻道、營運飛輪專案、60 條流程 | 顧問用虎智後台產出顧問包後套用 | **待做**(顧問包的另一部分,規劃另案) |
 | PostgreSQL 驅動 | 預留資料夾 `postgres/` | 之後 |
 
-分界一句話:**社群版有簡易的 n8n Webhook 示範**(管理員登記 webhook 應用、AI 在對話/頻道呼叫它、n8n 用金鑰呼叫 `/api/tigerai/hooks/agent`、hook 金鑰管理),但**沒有 MCP 集成區、沒有 Gitea、沒有 n8n 排程**;這些與 n8n/Gitea 的 docker 安裝與接上都是顧問包的事。
+分界一句話:**社群版有簡易的 n8n Webhook 示範**(管理員登記 webhook 應用、AI 在對話/頻道呼叫它、n8n 用金鑰呼叫 `/api/tigerai/hooks/agent`、hook 金鑰管理),另有 **n8n 的 MCP 連線**(示範,Founder 決定);但**沒有其他系統的 MCP、沒有 Gitea、沒有 n8n 排程**;這些與 n8n/Gitea 的 docker 安裝與接上都是顧問包的事。
+
+> 社群版只開放 n8n 的 MCP，當作 MCP 示範；其他系統的 MCP 請洽顧問或虎智科技（tiger.ai.tw@gmail.com）。
 
 ## 6. 顧問版映像怎麼建
 

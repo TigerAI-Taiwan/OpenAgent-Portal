@@ -29,3 +29,11 @@ test("outside the folder", () => {
   assert.ok(!pathAllowed(mine, 42));
   assert.ok(!pathAllowed(mine, "a/../../other/secret.txt"));
 });
+
+test("the company skills folder is readable through an extra root, and nothing next to it is", () => {
+  const skills = mkdtempSync(join(tmpdir(), "pg-skills-"));
+  mkdirSync(join(skills, "s1"));
+  assert.ok(pathAllowed(mine, join(skills, "s1", "SKILL.md"), [skills]));
+  assert.ok(!pathAllowed(mine, join(skills, "..", "auth.json"), [skills]));
+  assert.ok(!pathAllowed(mine, join(skills, "s1", "SKILL.md")), "without the root it stays blocked");
+});

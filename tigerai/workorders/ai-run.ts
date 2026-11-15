@@ -5,6 +5,7 @@ import { ServiceError, userById, type UserRow } from "../accounts/service";
 import { aiRunConcurrency } from "../config";
 import { getAgent, type AgentRow } from "../agents/service";
 import { pushToUser } from "../push";
+import { channelContext } from "./channel-context";
 import { getAssignment, requireVisible, type AssignmentRow } from "./assignments";
 
 /**
@@ -94,7 +95,10 @@ async function execute(id: string, followUp?: string): Promise<void> {
   getDb().prepare("UPDATE assignments SET run_started_at=?, updated_at=? WHERE id=? AND run_state='running'").run(Date.now(), Date.now(), id);
   writeAudit("assignment.ai_start", a.applicantId, { assignmentId: id, agentId: a.agentId ?? "general", round: a.runCount + 1 });
   // A returned order continues in the same conversation with the reason; a first run (or one that never got a conversation) starts from the order text.
-  const prompt = a.sessionId && followUp ? followUp : followUp ? `${firstPrompt(a)}\n\n${followUp}` : firstPrompt(a);
+  // Made from a channel: the channel's recent messages ride along (read-only, scoped: workorders/channel-context.ts). A return gets the newer ones too.
+  const channel = a.roomId ? channelContext(a.applicantId, a.roomId, a.id) : "";
+  const base = a.sessionId && followUp ? followUp : followUp ? `${firstPrompt(a)}\n\n${followUp}` : firstPrompt(a);
+  const prompt = channel ? `${base}\n\n${channel}` : base;
   let sessionId = a.sessionId;
   try {
     const d = await driver();

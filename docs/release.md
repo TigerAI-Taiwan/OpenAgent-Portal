@@ -41,7 +41,7 @@ Expected:
 - GitHub is authenticated as an account that can push and create releases.
 - CI on the commit you are releasing passed. The publish workflow only builds; it does not lint or test.
 
-Nothing is built locally, so a running dev server on 30141 is safe, and a local `.next/server/route-cache/` cannot leak into the package: CI builds from a fresh checkout.
+Nothing is built locally, so a running dev server on 30161 is safe, and a local `.next/server/route-cache/` cannot leak into the package: CI builds from a fresh checkout.
 
 Before bumping, confirm the next version is free (replace `<version>`):
 

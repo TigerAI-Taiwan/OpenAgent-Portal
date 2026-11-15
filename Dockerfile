@@ -17,7 +17,7 @@ RUN rm -rf .next/cache && find .next -name '*.js.map' -delete && npm prune --omi
 FROM node:22-bookworm-slim AS runtime
 ENV NODE_ENV=production \
     HOME=/home/node \
-    PORT=30141 \
+    PORT=30161 \
     PI_WEB_HOSTNAME=0.0.0.0 \
     PI_WEB_NO_OPEN=1
 
@@ -36,7 +36,7 @@ COPY --from=build --chown=node:node /app/public ./public
 COPY --from=build --chown=node:node /app/next.config.ts /app/package.json ./
 USER node
 
-EXPOSE 30141
+EXPOSE 30161
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD ["node", "-e", "fetch(`http://127.0.0.1:${process.env.PORT}`).then(r => process.exit(r.status < 500 ? 0 : 1)).catch(() => process.exit(1))"]
 

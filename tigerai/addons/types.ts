@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LicenseRef-TigerAI-SUL-Draft
 import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 import type { Item } from "../ui/layout";
+import type { ConnectorTemplate } from "../n8nmcp/templates";
 import type { WizardKind } from "../wizards/types";
 
 /**
@@ -56,6 +57,8 @@ export interface AddonModule {
   hooks?: Record<string, (req: Request) => Promise<Response>>;
   /** Extra pi extensions for every conversation (the same list `startExtensions` builds). */
   sessionExtensions?: (ctx: { sessionId: string; cwd: string }) => InlineExtension[];
+  /** Extra system-connector templates (Gitea, Zabbix, ...). The community edition has only n8n; these exist only while the package is active. */
+  connectorTemplates?: ConnectorTemplate[];
   /** MCP server names (the part between `mcp__` and the tool) that a member's conversation may call. */
   allowsMcpServer?: (name: string) => boolean;
 }

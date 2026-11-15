@@ -17,7 +17,7 @@ const { POST } = await jiti.import("./route.ts");
 
 test.after(() => rm(agentDir, { recursive: true, force: true }));
 
-function open(cwd, host = "localhost:30141") {
+function open(cwd, host = "localhost:30161") {
   return POST(new Request("http://localhost/api/open-in-explorer", {
     method: "POST",
     headers: { "Content-Type": "application/json", Host: host },
@@ -38,7 +38,7 @@ test("rejects a path outside the allowed roots before looking at it", async (t) 
 });
 
 test("refuses requests that are not addressed to this machine", async () => {
-  const response = await open(os.tmpdir(), "192.168.1.20:30141");
+  const response = await open(os.tmpdir(), "192.168.1.20:30161");
   assert.equal(response.status, 403);
   assert.deepEqual(await response.json(), { error: "remote" });
 });

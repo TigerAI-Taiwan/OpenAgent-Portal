@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { tr } from "../pages/i18n";
 import { api } from "./kit";
 import HashPrompts from "./HashPrompts";
+import TextAttach from "./TextAttach";
 
 /** Same card as the conversation input, but disabled with a reason and an optional button. */
 export function DisabledComposer({ reason, actionLabel, onAction, busy }: { reason: string; actionLabel?: string; onAction?: () => void; busy?: boolean }) {
@@ -37,5 +38,6 @@ export function ComposerState({ sessionId, children }: { sessionId: string | nul
   }, [sessionId]);
   if (roomOnly) return <DisabledComposer reason={tr("roomOnly")} />;
   // `#` calls up prompts (HashPrompts wraps the upstream composer; it never edits it).
-  return <HashPrompts>{children}</HashPrompts>;
+  // A .md/.txt picked with the attach button (or dropped on the composer) is read into the input for this one message (TextAttach).
+  return <TextAttach><HashPrompts>{children}</HashPrompts></TextAttach>;
 }

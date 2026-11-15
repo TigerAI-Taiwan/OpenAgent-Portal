@@ -9,6 +9,7 @@ import {
   type Connection, type ModelOverride,
 } from "./settings";
 import { existsSync, unlinkSync } from "node:fs";
+import { KEY_REQUIRED, mayUseStoredSecret, sameDest, typedSecret } from "../accounts/secret-dest";
 
 /** Admin model settings (the routes check the role; every write is audited, the key never is). */
 
@@ -85,7 +86,12 @@ async function patchConnection(c: Connection, input: Record<string, unknown>): P
   const changed: string[] = [];
   const key: { set?: string; remove?: boolean } = {};
   if ("name" in input) { next.name = cleanName(input.name); changed.push("name"); }
-  if ("baseUrl" in input) { next.baseUrl = normalizeBaseUrl(input.baseUrl); changed.push("baseUrl"); }
+  if ("baseUrl" in input) {
+    next.baseUrl = normalizeBaseUrl(input.baseUrl);
+    // The saved key is for the saved address. Moving the connection elsewhere needs the key typed again (or removed).
+    if (c.baseUrl && !sameDest(c.baseUrl, next.baseUrl) && connKey(c.id) && !typedSecret(input.apiKey) && input.apiKey !== null) throw new ServiceError("key_required", KEY_REQUIRED);
+    changed.push("baseUrl");
+  }
   if ("enabled" in input) {
     if (typeof input.enabled !== "boolean") throw new ServiceError("bad_enabled", "enabled must be true or false");
     next.enabled = input.enabled; changed.push("enabled");
@@ -203,7 +209,11 @@ export async function testConnection(input: { id?: unknown; baseUrl?: unknown; a
     const conn = typeof input.id === "string" ? listConnections().find((c) => c.id === input.id) : listConnections()[0];
     const base = input.baseUrl ? normalizeBaseUrl(input.baseUrl) : conn?.baseUrl ?? null;
     if (!base) return { ok: false, ms: 0, code: "not_configured", error: "No base URL is configured" };
-    const key = typeof input.apiKey === "string" && input.apiKey.trim() ? input.apiKey.trim() : (conn ? connKey(conn.id) : null);
+    const typed = typedSecret(input.apiKey);
+    const stored = conn ? connKey(conn.id) : null;
+    // A stored key is only sent to the stored address (H1): a different address needs the key typed again.
+    if (!mayUseStoredSecret({ hasStored: !!stored, storedDest: conn?.baseUrl, targetDest: base, typedNew: typed })) return { ok: false, ms: 0, code: "key_required", error: KEY_REQUIRED };
+    const key = typed ? String(input.apiKey).trim() : stored;
     const models = await discoverDetailed(base, key);
     return { ok: true, models: models.length, ms: Date.now() - started };
   } catch (e) {

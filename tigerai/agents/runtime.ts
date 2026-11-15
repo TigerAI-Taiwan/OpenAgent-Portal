@@ -2,6 +2,7 @@
 import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 import { getDb } from "../db/store";
 import { getAgent, type AgentRow } from "./service";
+import { knowledgePromptFor } from "../knowledge/store";
 
 /**
  * How an AI role reaches the model: its text is appended to the system prompt
@@ -32,6 +33,8 @@ export function rolePrompt(a: AgentRow): string {
   const parts = [`You are "${a.name}", an AI role in a team chat room. Stay in this role.`, a.system_prompt.trim()];
   if (a.skills.length) parts.push(`Skills you must follow: ${a.skills.join(", ")}.`);
   if (a.knowledge_dir) parts.push(`Reference material is in ${a.knowledge_dir}. Look things up there with the read tool before answering from memory.`);
+  // Lecture notes uploaded to the role (tigerai/knowledge): small files whole, the rest left in the role's folder for the read tool.
+  try { parts.push(knowledgePromptFor(a)); } catch (error) { console.error("[tigerai] role knowledge:", error instanceof Error ? error.message : error); }
   return parts.filter(Boolean).join("\n\n");
 }
 

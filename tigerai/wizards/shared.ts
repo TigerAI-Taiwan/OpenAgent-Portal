@@ -5,7 +5,7 @@ import { listMembers } from "../rooms/service";
 import { ASPECT_ZH, CATEGORY_ZH, type Aspect, type Checked } from "./format";
 import { assignmentFacts, promiseFacts, unansweredFacts, type Fact, type Msg, type Source } from "./facts";
 import { dismissedCount, suggestionRepeats, suggestionsToday } from "./store";
-import { suggestCap, type RoomWizardSettings } from "./settings";
+import { suggestCap } from "./settings";
 import { localParts, DAY_MS } from "./time";
 import type { DeliverItem } from "./types";
 import { humanMessages } from "./store";
@@ -26,16 +26,16 @@ export function supervisors(room: Pick<RoomRow, "id" | "owner_id">): string[] {
 }
 
 /** The facts the program counts for a channel: promises past their date or due soon, questions nobody answered, work orders late or due soon. */
-export function collectFacts(room: Pick<RoomRow, "id">, now: number, on: Pick<RoomWizardSettings, "aspects">): Fact[] {
+export function collectFacts(room: Pick<RoomRow, "id">, now: number, on: { aspects: Record<Aspect, boolean> }): Fact[] {
   if (!on.aspects.supervise && !on.aspects.remind) return [];
   const msgs = humanMessages(room.id, { sinceTs: now - 30 * DAY_MS, limit: 500 });
   const facts: Fact[] = [...promiseFacts(msgs, now), ...unansweredFacts(msgs, now)];
-  if (on.aspects.remind) {
+  if (on.aspects.remind || on.aspects.supervise) { // a late work order feeds both: 提醒 to the assignee, 監督 to their head
     const members = listMembers(room.id).map((m) => m.id);
     if (members.length) {
       const orders = getDb().prepare(
         `SELECT a.id, a.title, a.assignee_id AS assigneeId, COALESCE(u.name,'?') AS assigneeName, a.due_date AS dueDate FROM assignments a LEFT JOIN users u ON u.id=a.assignee_id
-         WHERE a.assignee_kind='user' AND a.status IN ('open','accepted') AND a.due_date IS NOT NULL AND a.assignee_id IN (${members.map(() => "?").join(",")})`,
+         WHERE a.assignee_kind='user' AND a.status IN ('open','accepted') AND a.due_date IS NOT NULL AND a.title NOT LIKE '監督:%' AND a.assignee_id IN (${members.map(() => "?").join(",")})`,
       ).all(...members) as unknown as { id: string; title: string; assigneeId: string; assigneeName: string; dueDate: number }[];
       facts.push(...assignmentFacts(orders, now));
     }
@@ -44,12 +44,12 @@ export function collectFacts(room: Pick<RoomRow, "id">, now: number, on: Pick<Ro
 }
 
 /** Private items the program itself makes from facts. No model is involved, so their text and numbers are exact. */
-export function factItems(room: Pick<RoomRow, "id" | "owner_id">, facts: readonly Fact[], on: Pick<RoomWizardSettings, "aspects">): DeliverItem[] {
+export function factItems(room: Pick<RoomRow, "id" | "owner_id">, facts: readonly Fact[], on: { aspects: Record<Aspect, boolean> }): DeliverItem[] {
   const out: DeliverItem[] = [];
   const heads = supervisors(room);
   const active = (id: string | null) => !!id && !!getDb().prepare("SELECT 1 FROM users WHERE id=? AND status='active'").get(id);
   for (const f of facts) {
-    if (on.aspects.supervise && f.supervise) out.push({ aspect: "supervise", text: f.supervise, sources: f.sources, to: { users: heads }, extra: { fact: f.kind, days: f.days } });
+    if (on.aspects.supervise && f.supervise) out.push({ aspect: "supervise", text: f.supervise, sources: f.sources, to: { users: heads }, extra: { fact: f.kind, days: f.days, ...(f.ownerId ? { subjectId: f.ownerId } : {}) } });
     // A reminder goes to the person who owes it, and to nobody else (not the heads, not the channel).
     if (on.aspects.remind && f.remind && active(f.ownerId)) out.push({ aspect: "remind", text: f.remind, sources: f.sources, to: { users: [f.ownerId!] }, extra: { fact: f.kind, days: f.days } });
   }

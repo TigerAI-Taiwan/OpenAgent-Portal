@@ -18,7 +18,7 @@ type Actor = { id: string; role: Role };
 export function getRun(id: string): RunRow | null {
   return (db().prepare("SELECT * FROM wizard_runs WHERE id=?").get(id) as unknown as RunRow) ?? null;
 }
-export function insertRun(r: { kind: string; roomId: string | null; runnerId: string; requestedBy: string | null; trigger: "schedule" | "manual"; period: string | null; params?: Record<string, unknown> }): RunRow {
+export function insertRun(r: { kind: string; roomId: string | null; runnerId: string; requestedBy: string | null; trigger: RunRow["trigger"]; period: string | null; params?: Record<string, unknown> }): RunRow {
   const id = newId("z");
   db().prepare("INSERT INTO wizard_runs (id,kind,room_id,runner_id,requested_by,trigger,period,status,created_at,input) VALUES (?,?,?,?,?,?,?,'running',?,?)")
     .run(id, r.kind, r.roomId, r.runnerId, r.requestedBy, r.trigger, r.period, Date.now(), JSON.stringify(r.params ?? {}));
@@ -43,11 +43,11 @@ export function runningRun(roomId: string, kind: string): RunRow | null {
 }
 
 /** Human messages of a channel after `afterSeq` (never AI, system, warning or wizard lines), oldest first. */
-export function humanMessages(roomId: string, opts: { afterSeq?: number; sinceTs?: number; limit?: number } = {}): Msg[] {
+export function humanMessages(roomId: string, opts: { afterSeq?: number; sinceTs?: number; untilTs?: number; limit?: number } = {}): Msg[] {
   const rows = db().prepare(
     `SELECT * FROM (SELECT m.seq, m.author_id AS authorId, COALESCE(u.name,'?') AS author, m.ts, m.text FROM room_messages m LEFT JOIN users u ON u.id=m.author_id
-      WHERE m.room_id=? AND m.kind='human' AND m.seq>? AND m.ts>=? ORDER BY m.seq DESC LIMIT ?) ORDER BY seq`,
-  ).all(roomId, opts.afterSeq ?? 0, opts.sinceTs ?? 0, Math.min(opts.limit ?? 500, 1000)) as unknown as Msg[];
+      WHERE m.room_id=? AND m.kind='human' AND m.seq>? AND m.ts>=? AND m.ts<? ORDER BY m.seq DESC LIMIT ?) ORDER BY seq`,
+  ).all(roomId, opts.afterSeq ?? 0, opts.sinceTs ?? 0, opts.untilTs ?? Number.MAX_SAFE_INTEGER, Math.min(opts.limit ?? 500, 1000)) as unknown as Msg[];
   return rows;
 }
 

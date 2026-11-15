@@ -1,0 +1,10 @@
+# Minimal SearXNG settings for the OpenAgent Portal's 上網查資料 (optional `search` profile in compose.yaml).
+# Everything not listed keeps SearXNG's defaults. The secret key comes from SEARXNG_SECRET (.env), never from this file.
+use_default_settings: true
+server:
+  limiter: false          # the Portal is the only client, on the internal compose network
+  image_proxy: false
+search:
+  formats:
+    - html
+    - json                # the Portal reads results as JSON

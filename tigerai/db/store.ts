@@ -223,6 +223,22 @@ CREATE TABLE IF NOT EXISTS wizard_items (
 CREATE INDEX IF NOT EXISTS wizard_items_run ON wizard_items (run_id);
 CREATE INDEX IF NOT EXISTS wizard_items_recipient ON wizard_items (recipient_id, state);
 CREATE TABLE IF NOT EXISTS wizard_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL);
+-- 使用者紀錄: last authenticated activity per person (written at most once a minute) and small admin switches.
+CREATE TABLE IF NOT EXISTS user_activity (user_id TEXT PRIMARY KEY, last_seen INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS tg_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL);
+-- 學生自行註冊: one join code per department (the class); the teacher hands it out, so strangers cannot join a class.
+-- 自行註冊的申請: the account row stays 'disabled' until a decision (users.status has a fixed CHECK set; SQLite cannot widen it).
+CREATE TABLE IF NOT EXISTS registration_requests (user_id TEXT PRIMARY KEY, group_id TEXT, phrase_entered TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')), created_at INTEGER NOT NULL, decided_by TEXT, decided_at INTEGER);
+CREATE TABLE IF NOT EXISTS group_join_codes (group_id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, enabled INTEGER NOT NULL DEFAULT 1, created_by TEXT, updated_at INTEGER NOT NULL);
+-- Authenticated activity, one row per person per minute at most (written beside user_activity); the attendance facts of AI 評分精靈 read it.
+CREATE TABLE IF NOT EXISTS activity_log (user_id TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (user_id, ts));
+-- 離職交接 (feat/ce-org): one row per handover, and the read-only access a successor gets to the leaver's personal conversations and folder.
+CREATE TABLE IF NOT EXISTS handovers (id TEXT PRIMARY KEY, leaver_id TEXT NOT NULL, successor_id TEXT, actor_id TEXT, at INTEGER NOT NULL, summary TEXT NOT NULL DEFAULT '{}');
+CREATE TABLE IF NOT EXISTS handover_reads (leaver_id TEXT NOT NULL, successor_id TEXT NOT NULL, granted_by TEXT, granted_at INTEGER NOT NULL, PRIMARY KEY (leaver_id, successor_id));
+-- 目錄對應表: an internal id (unit / channel / person) -> its real folder under the workspace. Folder names never change; names shown are read from the entity.
+-- 換部門: the project channels of the old unit are kept by default; the old head decides (pending -> kept | removed). The person's own folder is never touched.
+CREATE TABLE IF NOT EXISTS unit_change_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, unit_id TEXT NOT NULL, room_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','kept','removed')), created_by TEXT, created_at INTEGER NOT NULL, decided_by TEXT, decided_at INTEGER);
+CREATE TABLE IF NOT EXISTS dir_map (kind TEXT NOT NULL CHECK (kind IN ('unit','channel','person')), id TEXT NOT NULL, folder TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (kind, id));
 `;
 
 const KEY = Symbol.for("tigerai:db");
@@ -240,7 +256,10 @@ function openSqlite(path: string): SqlDb {
   } catch { /* no table yet */ }
   db.exec(SCHEMA);
   // Webhooks get a display name (Chinese allowed) apart from the lowercase id used in tool calls (0.1.x gen1-v7).
+  try { db.exec("ALTER TABLE group_join_codes ADD COLUMN phrase TEXT NOT NULL DEFAULT ''"); } catch { /* already there */ }
   try { db.exec("ALTER TABLE n8n_webhooks ADD COLUMN display_name TEXT NOT NULL DEFAULT ''"); } catch { /* already there */ }
+  // 1.1.2-ce: the HTTP method an n8n Webhook node listens on (n8n defaults to GET, the Portal used to send only POST).
+  try { db.exec("ALTER TABLE n8n_webhooks ADD COLUMN method TEXT NOT NULL DEFAULT 'POST'"); } catch { /* already there */ }
   // Databases created before the AI participant existed lack the column.
   try { db.exec("ALTER TABLE room_messages ADD COLUMN kind TEXT NOT NULL DEFAULT 'human'"); } catch { /* already there */ }
   // Where an assignment came from: 'person' (a member handed it over), 'ai' or 'n8n' (created through the inbound hook). v9.
@@ -248,13 +267,25 @@ function openSqlite(path: string): SqlDb {
   // v11: an order can be handed to an AI that works in the background. assignee_kind 'user' | 'ai' (existing rows stay 'user');
   // for 'ai' the assignee_id is 'ai:<agent id or general>' (nobody can log in as that), agent_id the role (null = 一般 AI),
   // run_state 'running' | 'review' (the status column keeps the old CHECK set: SQLite cannot alter a CHECK, and 'accepted' fits both).
-  for (const col of ["assignee_kind TEXT NOT NULL DEFAULT 'user'", "agent_id TEXT", "run_state TEXT", "run_started_at INTEGER", "ai_result TEXT", "ai_note TEXT", "run_count INTEGER NOT NULL DEFAULT 0"]) {
+  for (const col of ["assignee_kind TEXT NOT NULL DEFAULT 'user'", "agent_id TEXT", "run_state TEXT", "run_started_at INTEGER", "ai_result TEXT", "ai_note TEXT", "run_count INTEGER NOT NULL DEFAULT 0", "room_id TEXT"]) {
     try { db.exec(`ALTER TABLE assignments ADD COLUMN ${col}`); } catch { /* already there */ }
+  }
+  // v1.1: the maintenance (虎智) account is a flag, never a role (the role CHECK stays admin|member);
+  // a class (group) can be archived at the end of a term; idle sign-out remembers the last real user input per person.
+  for (const stmt of ["ALTER TABLE users ADD COLUMN is_vendor INTEGER NOT NULL DEFAULT 0", "ALTER TABLE groups ADD COLUMN archived_at INTEGER", "ALTER TABLE user_activity ADD COLUMN last_input INTEGER"]) {
+    try { db.exec(stmt); } catch { /* already there */ }
   }
   // Room close / soft delete (gen1 UI batch).
   for (const col of ["closed_at INTEGER", "closed_by TEXT", "deleted_at INTEGER", "deleted_by TEXT"]) {
     try { db.exec(`ALTER TABLE rooms ADD COLUMN ${col}`); } catch { /* already there */ }
   }
+  // feat/ce-org: optional employee number (unique), when a person left, and the unit a channel is filed under (NULL = 跨部門頻道).
+  for (const stmt of ["ALTER TABLE users ADD COLUMN employee_id TEXT", "ALTER TABLE users ADD COLUMN left_at INTEGER", "ALTER TABLE rooms ADD COLUMN unit_id TEXT", "ALTER TABLE rooms ADD COLUMN is_unit_default INTEGER NOT NULL DEFAULT 0"]) {
+    try { db.exec(stmt); } catch { /* already there */ }
+  }
+  // 1.1.0-ce: 工作週報 / 訊息分析 hand a 「確認」 交辦單 to the person who confirms; the run remembers it so the two stay in step.
+  try { db.exec("ALTER TABLE wizard_runs ADD COLUMN confirm_assignment_id TEXT"); } catch { /* already there */ }
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS users_employee_id ON users (employee_id COLLATE NOCASE) WHERE employee_id IS NOT NULL");
   try { chmodSync(path, 0o600); } catch { /* best effort */ }
   return db as unknown as SqlDb;
 }
@@ -288,15 +319,38 @@ export function closeDb(): void {
   g[KEY] = undefined;
 }
 
+const DEPTH = Symbol.for("tigerai:tx-depth");
+function depthHolder(): { n: number } {
+  const g = globalThis as unknown as Record<symbol, { n: number } | undefined>;
+  return (g[DEPTH] ??= { n: 0 });
+}
+
+/**
+ * Run `fn` atomically. Calls nest: the outermost is a real transaction, an inner one is a SAVEPOINT, so a function that opens its own
+ * transaction (leaveUser, applyUnitChange) can be used inside a bigger all-or-nothing run (the org.xlsx import) without a second BEGIN.
+ */
 export function inTransaction<T>(fn: () => T): T {
+  const r = transaction(() => ({ value: fn(), commit: true }));
+  return r;
+}
+
+/** Like inTransaction, but `fn` also says whether to keep the work: `commit: false` rolls it back and still returns the value (a preview). */
+export function transaction<T>(fn: () => { value: T; commit: boolean }): T {
   const db = getDb();
-  db.exec("BEGIN IMMEDIATE");
+  const d = depthHolder();
+  const name = `tg_sp${d.n}`;
+  db.exec(d.n === 0 ? "BEGIN IMMEDIATE" : `SAVEPOINT ${name}`);
+  d.n += 1;
+  let out: { value: T; commit: boolean };
   try {
-    const result = fn();
-    db.exec("COMMIT");
-    return result;
+    out = fn();
   } catch (error) {
-    try { db.exec("ROLLBACK"); } catch { /* already rolled back */ }
+    d.n -= 1;
+    try { db.exec(d.n === 0 ? "ROLLBACK" : `ROLLBACK TO ${name}; RELEASE ${name}`); } catch { /* already rolled back */ }
     throw error;
   }
+  d.n -= 1;
+  if (out.commit) db.exec(d.n === 0 ? "COMMIT" : `RELEASE ${name}`);
+  else db.exec(d.n === 0 ? "ROLLBACK" : `ROLLBACK TO ${name}; RELEASE ${name}`);
+  return out.value;
 }

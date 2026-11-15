@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: LicenseRef-TigerAI-SUL-Draft
 import { randomUUID } from "node:crypto";
-import { createWriteStream, existsSync, renameSync, statSync, truncateSync } from "node:fs";
+import { createWriteStream, existsSync, renameSync, statSync, truncateSync, writeFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -9,17 +9,20 @@ import { getDb } from "../../db/store";
 import { writeAudit } from "../../accounts/audit";
 import { ServiceError, listUsers } from "../../accounts/service";
 import { accessFlags, getRoom, listMembers, requireRoom, roomIsOpen } from "../../rooms/service";
+import { channelFolder } from "../../directory/map";
 import { withAiSlot } from "../../workorders/ai-run";
 import { effectiveBaseUrl, effectiveDefaultModel, effectiveKey } from "../../provider/settings";
 import { requireVisible } from "../../workorders/assignments";
-import { transcribeFile } from "./asr-client";
-import { asrConfigured } from "./asr-settings";
+import { transcribeCompare, transcribeFile } from "./asr-client";
+import { crossCheck } from "./crosscheck";
+import { glossaryTerms } from "./asr-settings";
+import { asrConfigured, effectiveCompare } from "./asr-settings";
 import { wizardHost } from "./host";
 import {
-  ensureDir, ensureTables, getMeeting, meetingDir, parseSummaryJson, readTranscriptLines, transcriptPath, uploadsDir, writeTranscript, type MeetingRow,
+  ensureDir, ensureTables, getMeeting, readCrosscheck, writeCrosscheck, meetingDir, parseSummaryJson, readTranscriptLines, transcriptPath, uploadsDir, writeTranscript, type MeetingRow,
 } from "./store";
 import {
-  MAX_TRANSCRIPT_CHARS, SYSTEM_PROMPT, assignmentPrefill, buildUserPrompt, parseSummary, renderSummary, segmentTranscript, todayOf, type Person, type Summary,
+  MAX_TRANSCRIPT_CHARS, SYSTEM_PROMPT, assignmentPrefill, buildUserPrompt, parseSummary, renderSummary, repairPrompt, segmentTranscript, todayOf, type Person, type Summary,
 } from "./summarize";
 
 type Actor = { id: string; role: "admin" | "member" };
@@ -51,6 +54,9 @@ async function gatewayChat(system: string, user: string): Promise<string> {
 export type Transcriber = (path: string, name: string, mime: string) => Promise<string>;
 let transcriber: Transcriber = transcribeFile;
 export function setTranscriber(fn: Transcriber | null): void { transcriber = fn ?? transcribeFile; }
+/** Test seam: the 對照模型 (second transcription). */
+let comparer: Transcriber = transcribeCompare;
+export function setComparer(fn: Transcriber | null): void { comparer = fn ?? transcribeCompare; }
 
 const ACTIVE = Symbol.for("tigerai:meeting-active");
 const active = (): Set<string> => ((globalThis as unknown as Record<symbol, Set<string> | undefined>)[ACTIVE] ??= new Set());
@@ -105,6 +111,8 @@ export function view(actor: Actor, m: MeetingRow, full = false) {
   const meta = { title: m.title, date: dayOf(m.created_at) };
   return {
     ...base, lines, summary, links,
+    // 待確認 marks per line, and what the 對照模型 pass measured (absent: a meeting from before 1.1.2-ce)
+    crosscheck: (() => { const c = readCrosscheck(m.id); return c ? { enabled: c.enabled, mainMs: c.mainMs, compareMs: c.compareMs, wallMs: c.wallMs, agreement: c.agreement, error: c.error ?? null, flags: c.flags } : null; })(),
     markdown: summary ? renderSummary(meta, summary, lines, "personal") : null,
     prefills: summary && m.owner_id === actor.id ? summary.actions.map((a) => assignmentPrefill(meta, a, lines)) : [],
   };
@@ -244,12 +252,25 @@ async function runPipeline(id: string): Promise<void> {
     try {
       const dir = meetingDir(id);
       const ext = extname(m.audio_name ?? "").toLowerCase();
-      const text = await transcriber(join(dir, `audio${ext}`), m.audio_name ?? `audio${ext}`, AUDIO_TYPES[ext] ?? "application/octet-stream");
+      const audio = join(dir, `audio${ext}`); const mime = AUDIO_TYPES[ext] ?? "application/octet-stream";
+      // 對照模型 (optional): both services get the same file at the same time, so the extra wait is the slower of the two, not the sum.
+      const timed = async (fn: () => Promise<string>): Promise<{ text: string; ms: number }> => { const t = Date.now(); const text = await fn(); return { text, ms: Date.now() - t }; };
+      const cmpOn = effectiveCompare() !== null;
+      const [mainR, cmpR] = await Promise.allSettled([timed(() => transcriber(audio, m.audio_name ?? `audio${ext}`, mime)), cmpOn ? timed(() => comparer(audio, m.audio_name ?? `audio${ext}`, mime)) : Promise.resolve(null)]);
+      if (mainR.status === "rejected") throw mainR.reason;
+      const text = mainR.value.text;
       if (text.length > MAX_TRANSCRIPT_CHARS) throw new Error(`The transcript is longer than ${MAX_TRANSCRIPT_CHARS} characters`);
       const lines = segmentTranscript(text);
       writeTranscript(id, lines);
-      getDb().prepare("UPDATE meetings SET line_count=?, asr_ms=?, status='summarizing', failed_stage=NULL, error=NULL, updated_at=? WHERE id=?").run(lines.length, Date.now() - started, Date.now(), id);
-      writeAudit("asr.transcribe", m.owner_id, { meetingId: id, bytes: m.audio_bytes ?? 0, ms: Date.now() - started, outcome: "ok", lines: lines.length });
+      // The main transcript above is the record and is never changed by the second one: it only decides which lines to mark 待確認.
+      const other = cmpR.status === "fulfilled" && cmpR.value ? cmpR.value.text : null;
+      const cross = crossCheck(lines, other, glossaryTerms());
+      writeCrosscheck(id, { version: 1, enabled: cmpOn, mainMs: mainR.value.ms, compareMs: cmpR.status === "fulfilled" && cmpR.value ? cmpR.value.ms : null, wallMs: Date.now() - started, agreement: cross.agreement, flags: cross.flags,
+        ...(cmpR.status === "rejected" ? { error: `對照模型沒有回應:${safeError(cmpR.reason)}(逐字稿照主模型,沒有對照標記)` } : {}) });
+      if (cmpR.status === "rejected") writeAudit("asr.compare", m.owner_id, { meetingId: id, outcome: "failed", reason: safeError(cmpR.reason) });
+      getDb().prepare("UPDATE meetings SET line_count=?, asr_ms=?, status='summarizing', failed_stage=NULL, error=NULL, updated_at=? WHERE id=?").run(lines.length, mainR.value.ms, Date.now(), id);
+      writeAudit("asr.transcribe", m.owner_id, { meetingId: id, bytes: m.audio_bytes ?? 0, ms: mainR.value.ms, outcome: "ok", lines: lines.length,
+        ...(cmpOn ? { compareMs: cmpR.status === "fulfilled" && cmpR.value ? cmpR.value.ms : null, wallMs: Date.now() - started, flagged: cross.flags.length } : {}) });
     } catch (e) {
       const why = safeError(e);
       setStatus(id, "failed", { stage: "transcribe", error: `轉文字沒有完成:${why}` });
@@ -262,9 +283,21 @@ async function runPipeline(id: string): Promise<void> {
   const lines = readTranscriptLines(id);
   const people = peopleFor(m);
   const today = todayOf();
+  // Lines marked 待確認 (the two speech models disagreed, or a company term looks mis-heard). A pasted transcript has no second model, but the
+  // glossary check still runs once.
+  let cc = readCrosscheck(id);
+  if (!cc) { const r = crossCheck(lines, null, glossaryTerms()); cc = { version: 1, enabled: false, mainMs: null, compareMs: null, wallMs: null, agreement: null, flags: r.flags }; try { writeCrosscheck(id, cc); } catch { /* the summary does not need the file */ } }
+  const flagged = new Set(cc.flags.map((f) => f.line));
   try {
-    const raw = await withAiSlot(() => modelCall(SYSTEM_PROMPT, buildUserPrompt(lines, { title: m.title, today, people })));
-    const summary = parseSummary(raw, { lineCount: lines.length, today, people });
+    const parseCtx = { lineCount: lines.length, today, people, lines, flagged };
+    const raw = await withAiSlot(() => modelCall(SYSTEM_PROMPT, buildUserPrompt(lines, { title: m.title, today, people, glossary: glossaryTerms(), flagged })));
+    let summary = parseSummary(raw, parseCtx);
+    if (!summary) {
+      // One stricter second ask before the person sees an error: the model is shown its own unreadable answer.
+      writeAudit("meeting.summary_repair", m.owner_id, { meetingId: id });
+      const again = await withAiSlot(() => modelCall(SYSTEM_PROMPT, repairPrompt(raw)));
+      summary = parseSummary(again, parseCtx);
+    }
     if (!summary) throw new Error("AI 的回答格式不對,沒有可用的內容");
     const kept = summary.decisions.length + summary.actions.length + summary.suggestions.length;
     if (kept === 0 && summary.dropped > 0) throw new Error("AI 整理出來的項目都沒有附上逐字稿出處,已全部擋下");
@@ -283,7 +316,15 @@ function deliver(m: MeetingRow, s: Summary, lines: string[]): void {
   const meta = { title: m.title, date: dayOf(m.created_at) };
   if (m.posted_at) return;
   if (!m.room_id || !roomIsOpen(m.room_id)) return;
-  if (host.postToRoom(m.room_id, renderSummary(meta, s, lines, "room"), m.id, m.owner_id)) getDb().prepare("UPDATE meetings SET posted_at=? WHERE id=?").run(Date.now(), m.id);
+  const posted = renderSummary(meta, s, lines, "room");
+  if (host.postToRoom(m.room_id, posted, m.id, m.owner_id)) getDb().prepare("UPDATE meetings SET posted_at=? WHERE id=?").run(Date.now(), m.id);
+  // 1.1.2-ce: the summary also lands in the channel's own folder (檔案), so it is found in the 目錄 and not only scrolled past in the chat.
+  // Best effort like the other wizard files: a failed write never fails the delivery.
+  try {
+    const name = `會議摘要_${dayOf(m.created_at)}_${m.title.replace(/[^\p{L}\p{N}_-]+/gu, "").slice(0, 24) || "會議"}_${m.id.slice(0, 6)}.md`;
+    writeFileSync(join(channelFolder(m.room_id, "檔案"), name), `# 會議摘要:${m.title}\n\n> AI 草稿,每一項附逐字稿行號為出處;採不採用由人決定。\n\n${posted}\n`, { mode: 0o600 });
+    writeAudit("meeting.channel_file", m.owner_id, { meetingId: m.id, roomId: m.room_id });
+  } catch { /* the channel post is the record */ }
   const sources = (a: { lines: number[] }) => a.lines.slice(0, 3).map((n) => ({ label: `會議「${m.title}」第 ${n} 行`, quote: (lines[n - 1] ?? "").slice(0, 80) }));
   for (const a of s.actions) {
     if (!a.ownerId) continue;

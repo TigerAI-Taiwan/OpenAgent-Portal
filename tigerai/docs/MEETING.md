@@ -29,6 +29,16 @@ Modal tabs: 新增 (paste or upload) · 會議記錄 (mine, or the room's). 提�
 - Transcribing reads the file lazily from disk (`fs.openAsBlob`) and posts it to the service; the transcript is stored as `meetings/<id>/transcript.txt` (line n = source n) and is downloadable (`GET meeting/:id/transcript`).
 - Audit: `asr.transcribe` (meetingId, bytes, ms, outcome ok/failed, reason), `asr.update` (changed field names only), `meeting.create`, `meeting.summary`, `meeting.download`, `meeting.assignment_linked`, `wizard.deliver`.
 
+### 對照模型與待確認(1.1.2-ce)
+
+管理員可在「語音轉文字服務」下面另外填一組**對照模型**(位址、模型、金鑰;金鑰單獨存、只顯示末四碼、跟著自己的位址)。設定後每段錄音同時送給兩個服務:
+
+- **主逐字稿永遠是主模型的原文**,行號出處以它為準;對照只決定哪些行標「待確認」。
+- 標記條件:對齊後兩邊編輯距離 ≥2 且 ≥6%,或兩邊的數字不同;公司術語表的詞在對照模型寫對、主模型沒寫對(或 3 字以上差一字)也標。貼上的逐字稿只做術語表那一項。
+- 摘要引用到待確認的行時,項目會標「出處行待確認」;摘要最後有「自我檢查」(程式檢查):每項是否有出處行、沒負責人/期限的待辦數、建立在待確認行上的項目、引用了出處行沒有的數字。
+- 對照模型沒回應不會讓會議失敗,逐字稿照主模型,頁面上有一行說明。
+- 時間:`crosscheck.json`(每場會議)與稽核 `asr.transcribe` 記 `mainMs`、`compareMs`、`wallMs`;兩個一起送,多等的時間約等於較慢的那個。
+
 ## API (all under /api/tg, signed in; a meeting is visible to its starter, to members of its room, and to administrators)
 
 | Route | Meaning |

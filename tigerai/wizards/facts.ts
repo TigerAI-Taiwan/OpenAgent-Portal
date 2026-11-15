@@ -108,7 +108,9 @@ export function unansweredFacts(messages: readonly Msg[], now: number, zone = wi
     if (messages.slice(i + 1).some((x) => x.authorId !== m.authorId)) return;
     const days = Math.floor((now - m.ts) / DAY_MS);
     out.push({
-      kind: "unanswered", ownerId: m.authorId, ownerName: m.author, sources: [{ t: "m", seq: m.seq }], days, remind: null,
+      kind: "unanswered", ownerId: m.authorId, ownerName: m.author, sources: [{ t: "m", seq: m.seq }], days,
+      // A reminder to whoever asked (the program cannot know who should answer): the question is still open, chase it or name someone.
+      remind: `你在 ${dayKey(m.ts, zone)} 問「${excerpt(m.text)}」,已超過 ${days} 天沒有人回覆,可以再問一次或指定一個人。`,
       supervise: `${m.author}在 ${dayKey(m.ts, zone)} 問「${excerpt(m.text)}」,已超過 ${days} 天沒有人回覆。`,
     });
   });
@@ -126,7 +128,10 @@ export function assignmentFacts(orders: readonly OrderRow[], now: number, zone =
     const left = calendarDays(today, due);
     if (left > SOON_DAYS) continue;
     const when = left < 0 ? `已逾期 ${-left} 天` : left === 0 ? "今天到期" : `${left} 天後到期`;
-    out.push({ kind: left < 0 ? "assignment_overdue" : "assignment_soon", ownerId: o.assigneeId, ownerName: o.assigneeName, sources: [{ t: "a", id: o.id }], days: Math.abs(left), supervise: null, remind: `交辦單「${o.title}」${when}。` });
+    out.push({ kind: left < 0 ? "assignment_overdue" : "assignment_soon", ownerId: o.assigneeId, ownerName: o.assigneeName, sources: [{ t: "a", id: o.id }], days: Math.abs(left),
+      // A work order that is late is the plainest "答應了、沒做到": the head of the assignee hears about it too (監督), not only the assignee (提醒).
+      supervise: left < 0 ? `${o.assigneeName}的交辦單「${o.title}」期限是 ${due},已逾期 ${-left} 天,還沒有完成。` : null,
+      remind: `交辦單「${o.title}」${when}。` });
   }
   return out;
 }

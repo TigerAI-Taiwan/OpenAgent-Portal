@@ -46,7 +46,7 @@ export const skill: WizardKind = {
     for (const i of items) {
       if (!i.skill) continue;
       if (new Set(i.sources.map((s) => (s.t === "m" ? s.seq : -1))).size < MIN_REPEATS) { tooFew++; continue; }
-      const slug = skillSlug(i.skill.name);
+      const slug = skillSlug(i.skill.name, i.skill.when, ...i.skill.steps);
       if (taken.has(slug)) { duplicate++; continue; }
       taken.add(slug);
       if (out.length >= MAX_PROPOSALS) break;

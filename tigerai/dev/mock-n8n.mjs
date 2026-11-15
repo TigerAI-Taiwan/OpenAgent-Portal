@@ -3,6 +3,7 @@
 //   node tigerai/dev/mock-n8n.mjs <port> <token-file>
 //   POST /webhook/monthly-revenue  {co_id}  -> fixed monthly revenue JSON (fictional figures)
 //   POST /mcp-server/http          minimal MCP over HTTP (initialize, tools/list, tools/call), Bearer token
+//   GET  /webhook/portal-get/lookup?co_id=...  a Webhook node left on n8n's default method (GET): POST answers 404 like n8n does
 //   GET  /__stats                  what was received (payloads of the webhook; MCP tool names)
 import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
@@ -10,7 +11,7 @@ import { readFileSync } from "node:fs";
 const port = Number(process.argv[2] ?? 30174);
 const token = readFileSync(process.argv[3], "utf8").trim();
 const echoKey = process.argv[4] ? readFileSync(process.argv[4], "utf8").trim() : null; // value of X-Portal-Test-Key for /webhook/portal-test/echo
-const stats = { webhook: [], mcp: [], echo: [], keyRefused: 0, unauthorised: 0 };
+const stats = { get: [], webhook: [], mcp: [], echo: [], keyRefused: 0, unauthorised: 0 };
 const TOOLS = ["search_workflows", "get_workflow_details", "execute_workflow", "get_workflow_execution", "create_workflow_from_code", "update_workflow", "publish_workflow", "archive_workflow"];
 const COMPANIES = { "2308": { name: "Delta Electronics", month: "2026-10", revenue_ntd_thousand: 36542100, yoy_percent: 8.4 } };
 
@@ -25,6 +26,11 @@ createServer((req, res) => {
   req.on("end", () => {
     let body = {};
     try { body = raw ? JSON.parse(raw) : {}; } catch { /* leave empty */ }
+    if (url.pathname === "/webhook/portal-get/lookup") {
+      if (req.method !== "GET") return json(404, { code: 404, message: `This webhook is not registered for ${req.method} requests. Did you mean to make a GET request?` });
+      const q = Object.fromEntries(url.searchParams); stats.get.push(q);
+      return json(200, lookup(q.co_id));
+    }
     if (req.method === "POST" && url.pathname === "/webhook/monthly-revenue") {
       stats.webhook.push(body);
       return json(200, lookup(body.co_id));

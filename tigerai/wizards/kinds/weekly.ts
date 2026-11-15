@@ -1,18 +1,21 @@
 // SPDX-License-Identifier: LicenseRef-TigerAI-SUL-Draft
 import { getDb } from "../../db/store";
 import { getSettings } from "../settings";
-import { COMMON_RULES, checkLines, formatRules, parseLines, type Aspect, type Checked } from "../format";
+import { COMMON_RULES, checkLines, formatRules, messageLine, parseLines, type Aspect, type Checked } from "../format";
 import { factLine, type Source } from "../facts";
-import { collectFacts, factItems, fmtDay, renderSections, shapeSuggestions, supervisors } from "../shared";
+import { collectFacts, factItems, fmtDay, fmtMdHm, renderSections, shapeSuggestions, supervisors } from "../shared";
+import { deckLinks, makeReport } from "../report";
+import { humanMessages } from "../store";
 import { dayKey, localDayStart, weekStartDay, addDays, calendarDays } from "../time";
 import { WizardFailure, type DeliverItem, type RunRow, type WizardKind } from "../types";
 import type { ItemRow } from "../store";
 
 /**
- * 週報. Reads this week's finished 每日摘要 of the channel (confirmed or not; the prompt says which) and the work orders linked to the
+ * 工作週報. Reads this week's finished 每日摘要 of the channel (confirmed or not; the prompt says which) and the work orders linked to the
  * channel's own conversation, and writes a draft for the channel. What the channel sees is 記錄 and 建議 plus the work order table
  * (counted by the program). 監督, 稽核 and 提醒 are routed privately like every other run: a post in the channel is read by every member,
- * and those three aspects are not for every member.
+ * and those three aspects are not for every member. All five aspects are ticked by default (settings.ts); on top of the post the run makes a
+ * slide report (report.ts): one deck for the channel (記錄, 建議, work orders) and a separate one for the heads (監督, 稽核).
  */
 
 const MAX_PER_ASPECT = 6;
@@ -20,17 +23,19 @@ interface OrderLine { id: string; title: string; assignee: string; status: strin
 
 export const weekly: WizardKind = {
   id: "weekly",
-  label: "週報",
+  label: "工作週報",
   prepare(ctx) {
     const room = ctx.room;
-    if (!room) throw new WizardFailure("週報要在頻道裡執行");
+    if (!room) throw new WizardFailure("工作週報要在頻道裡執行");
     const today = dayKey(ctx.now);
     const monday = weekStartDay(today);
     const since = localDayStart(monday);
     const db = getDb();
     const dailies = db.prepare("SELECT * FROM wizard_runs WHERE room_id=? AND kind='daily' AND status='done' AND created_at>=? ORDER BY created_at").all(room.id, since) as unknown as RunRow[];
     const orders = linkedOrders(room.id, ctx.now);
-    if (dailies.length === 0 && orders.length === 0) return { skip: "這週沒有每日摘要或交辦單可以整理" };
+    // The week's own messages too (newest 120): 監督 and 稽核 need the originals, a daily summary only keeps 記錄 and 建議.
+    const msgs = humanMessages(room.id, { sinceTs: since, limit: 120 });
+    if (dailies.length === 0 && orders.length === 0 && msgs.length === 0) return { skip: "這週沒有每日摘要或交辦單可以整理" };
 
     const allowed = new Set<number>();
     const blocks: string[] = [];
@@ -43,13 +48,15 @@ export const weekly: WizardKind = {
       });
       blocks.push(`【${fmtDay(r.created_at)} 每日摘要,${r.confirm_state === "confirmed" ? "已確認" : "尚未確認(內容僅供參考)"}】\n${lines.join("\n") || "- (沒有項目)"}`);
     }
+    msgs.forEach((m) => allowed.add(m.seq));
     const s = getSettings(room.id);
-    const on = new Set<Aspect>((["record", "suggest", "supervise", "audit"] as Aspect[]).filter((a) => s.aspects[a]));
-    const facts = collectFacts(room, ctx.now, s);
+    const on = new Set<Aspect>((["record", "suggest", "supervise", "audit"] as Aspect[]).filter((a) => s.aspects.weekly[a]));
+    const facts = collectFacts(room, ctx.now, { aspects: s.aspects.weekly });
     const prompt = [
-      `你是頻道「${room.name}」的週報整理助理。下面是這週(${monday} 起)的每日摘要;請整理成這週的重點。`,
+      `你是頻道「${room.name}」的工作週報整理助理。下面是這週(${monday} 起)的每日摘要;請整理成這週的重點。`,
       on.size ? `請依下面格式輸出,一行一則:\n${formatRules(on)}` : "",
       `規則:\n${COMMON_RULES}`,
+      msgs.length ? `本週的訊息(新的 ${msgs.length} 則):\n${msgs.map((m) => messageLine(m, fmtMdHm(m.ts), 200)).join("\n")}` : "",
       blocks.length ? `每日摘要:\n${blocks.join("\n\n")}` : "這週沒有每日摘要。",
       orders.length ? `這週與頻道有關的交辦單(程式整理,不用重複):\n${orders.map((o) => `- ${o.title}(${o.assignee},${o.status}${o.late > 0 ? `,逾期 ${o.late} 天` : ""})`).join("\n")}` : "",
       facts.length ? `程式已經算出(不用重複,也不要改數字):\n${facts.map(factLine).join("\n")}` : "",
@@ -61,16 +68,16 @@ export const weekly: WizardKind = {
     return { prompt, allowed, data: { dailies: dailies.length, unconfirmed: dailies.filter((r) => r.confirm_state !== "confirmed").length, orders, facts, monday, tableOnly: false } };
   },
 
-  finish(ctx, prepared, reply) {
+  async finish(ctx, prepared, reply) {
     const room = ctx.room!;
     const d = prepared.data as { dailies: number; unconfirmed: number; orders: OrderLine[]; facts: ReturnType<typeof collectFacts>; monday: string; tableOnly: boolean };
     const s = getSettings(room.id);
-    const modelOn = new Set<Aspect>((["record", "suggest", "supervise", "audit"] as Aspect[]).filter((a) => s.aspects[a]));
+    const modelOn = new Set<Aspect>((["record", "suggest", "supervise", "audit"] as Aspect[]).filter((a) => s.aspects.weekly[a]));
     const checked = d.tableOnly ? { items: [] as Checked[], rejected: undefined } : checkLines(parseLines(reply), prepared.allowed, modelOn);
     if (!d.tableOnly && checked.items.length === 0) throw new WizardFailure("AI 的回覆格式不對,或沒有附上訊息出處,這次沒有採用任何內容");
     const by = (a: Aspect) => checked.items.filter((i) => i.aspect === a).slice(0, MAX_PER_ASPECT);
     const heads = supervisors(room);
-    const fromFacts = factItems(room, d.facts, s);
+    const fromFacts = factItems(room, d.facts, { aspects: s.aspects.weekly });
     const supervise: DeliverItem[] = [...fromFacts.filter((i) => i.aspect === "supervise"), ...by("supervise").map((i): DeliverItem => ({ aspect: "supervise", text: i.text, sources: i.sources, to: { users: heads } }))];
     const shaped = shapeSuggestions({ roomId: room.id, runnerId: ctx.runner.id, day: dayKey(ctx.now), suggestions: by("suggest"), supervise });
     const out: DeliverItem[] = [
@@ -87,14 +94,22 @@ export const weekly: WizardKind = {
     const table = d.orders.length
       ? ["### 交辦單狀態(程式整理)", ...d.orders.map((o) => `- ${o.title}　${o.assignee}　${o.status}${o.due ? `　到期 ${o.due}` : ""}${o.late > 0 ? `　逾期 ${o.late} 天` : ""}　〔交辦單〕`)].join("\n")
       : "";
+    // The slide report (never fails the run: a report that could not be made is said so in the post).
+    const report = await makeReport({
+      roomId: room.id, roomName: room.name, ownerId: ctx.runner.id, title: `${room.name} 工作週報 ${d.monday.replace(/-/g, "/")}`, subtitle: "AI 草稿,待確認", items: out, orders: d.orders, supervisors: heads,
+    });
+    for (const p of report.privateDecks) {
+      out.push({ aspect: "supervise", text: `本週的主管版報告(監督與稽核)已做好:${deckLinks(p.deck)}`, sources: [{ t: "x", label: `工作週報主管版 ${d.monday}`, quote: room.name }], to: { users: [p.userId] }, extra: { deck: p.deck.id, pdf: p.deck.pdf } });
+    }
+    const reportLine = report.channel ? `**報告投影片**:${deckLinks(report.channel)}${report.channel.note ? `(${report.channel.note})` : ""}` : report.error ? `報告投影片沒有做成:${report.error}` : "";
     const text = [
-      `**週報(AI 草稿,待確認)**　${d.monday.replace(/-/g, "/")} 起這一週`,
+      `**工作週報(AI 草稿,待確認)**　${d.monday.replace(/-/g, "/")} 起這一週`,
       `這週共讀了 ${d.dailies} 份每日摘要${d.unconfirmed ? `,其中 ${d.unconfirmed} 份還沒有人確認(內容僅供參考)` : ""}。`,
-      body, table,
-      "> 監督、稽核、提醒只送給主管或本人,不顯示在頻道。AI 只寫草稿與建議;要不要採用,由頻道建立者或主管決定。",
+      body, table, reportLine,
+      "> 監督、稽核、提醒只送給主管或本人,不顯示在頻道;主管版報告也只送給主管。AI 只寫草稿與建議;要不要採用,由頻道建立者或主管決定。",
     ].filter(Boolean).join("\n\n");
     // The work orders are sources too: 提醒 about them already travelled as facts; the table cites them.
-    return { post: { text, confirmable: true }, items: out, note: { dailies: d.dailies, unconfirmed: d.unconfirmed, orders: d.orders.length, rejected: checked.rejected } };
+    return { post: { text, confirmable: true }, items: out, note: { dailies: d.dailies, unconfirmed: d.unconfirmed, orders: d.orders.length, rejected: checked.rejected, report: { channel: !!report.channel, private: report.privateDecks.length, error: report.error } } };
   },
 };
 

@@ -3,7 +3,7 @@
 // Who is signed in, fetched once per page load and shared by every slot.
 import { useSyncExternalStore } from "react";
 
-export type TgMe = { id: string; name: string; email: string; role: "admin" | "member"; mustChangePassword: boolean; isHead?: boolean; homeDir?: string | null };
+export type TgMe = { id: string; name: string; email: string; role: "admin" | "member"; mustChangePassword: boolean; isHead?: boolean; canUserLog?: boolean; homeDir?: string | null; /** how many of their own model connections are usable now */ personalModels?: number; isVendor?: boolean; idleMinutes?: number };
 export type MeState = { status: "loading" | "off" | "on"; me: TgMe | null };
 
 let state: MeState = { status: "loading", me: null };

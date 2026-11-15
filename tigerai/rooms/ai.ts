@@ -23,7 +23,8 @@ import { forgetPendingRole, registerPendingRole } from "../agents/runtime";
  */
 
 export const AI_AUTHOR = "ai";
-const MENTION = /(^|[^\w@])@ai(?![\w-])/i;
+// The old Portal's triggers: @AI, @助理, @agent, with a full-width ＠ too (a Chinese input method types it and it looks the same).
+const MENTION = /(^|[^\w@＠])[@＠](?:ai|助理|agent)(?![\w-])/i;
 const CONTEXT_MESSAGES = 8;
 const RUN_TIMEOUT_MS = 5 * 60_000;
 

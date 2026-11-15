@@ -14,7 +14,9 @@ type Row = { id: string; title: string; status: "transcribing" | "summarizing" |
 type Action = { idx: number; task: string; owner: string | null; due: string | null; lines: number[]; unowned: boolean; noDue: boolean; overdue: boolean };
 type Detail = Row & {
   lines: string[]; links: { idx: number; assignmentId: string }[]; prefills: AssignmentPrefill[];
-  summary: { decisions: { text: string; lines: number[] }[]; actions: Action[]; suggestions: { text: string; lines: number[] }[]; dropped: number } | null;
+  summary: { decisions: { text: string; lines: number[]; uncertain?: boolean; numberCheck?: boolean }[]; actions: Action[]; suggestions: { text: string; lines: number[]; uncertain?: boolean; numberCheck?: boolean }[]; dropped: number;
+    check?: { items: number; withSource: number; dropped: number; actionsNoOwner: number; actionsNoDue: number; uncertain: number; numberMismatch: number; clean: boolean } } | null;
+  crosscheck?: { enabled: boolean; mainMs: number | null; compareMs: number | null; wallMs: number | null; agreement: number | null; error: string | null; flags: { line: number; kinds: ("disagree" | "glossary")[]; other?: string; term?: string }[] } | null;
 };
 type Caps = { asrConfigured: boolean; maxAudioBytes: number };
 
@@ -27,6 +29,9 @@ const CSS = `
 .tgmt-ref:hover{background:var(--bg-hover);color:var(--text)}
 .tgmt-line{display:flex;gap:8px;padding:2px 6px;border-radius:6px;font-size:13px;overflow-wrap:anywhere}
 .tgmt-line.hit{background:var(--bg-selected)}
+.tgmt-line.flag{background:color-mix(in srgb, #f59e0b 14%, transparent)}
+.tgmt-flag{flex:none;align-self:flex-start;border:1px solid #d97706;color:#b45309;border-radius:10px;padding:0 6px;font-size:11px;white-space:nowrap}
+.tgmt-check{font-size:12px;color:var(--text-muted)}
 .tgmt-n{flex:none;width:34px;text-align:right;color:var(--text-dim)}
 .tgmt-bubble{padding:10px 14px;border-radius:14px;max-width:100%}
 .tgmt-user{align-self:flex-end;background:var(--user-bg)}
@@ -40,7 +45,7 @@ const CSS = `
 const running = (s: Row["status"]) => s === "transcribing" || s === "summarizing";
 const stText = (r: Row) => (r.status === "transcribing" ? mt("transcribing") : r.status === "summarizing" ? mt("summarizing") : r.status === "failed" ? mt("failed") : mt("stDone"));
 
-export default function MeetingModal({ roomId = null, onClose }: { roomId?: string | null; onClose: () => void }) {
+export default function MeetingModal({ roomId = null, roomChoice = null, onClose }: { roomId?: string | null; roomChoice?: { id: string; name: string } | null; onClose: () => void }) {
   const [tab, setTab] = useState<"new" | "list">("new");
   const [openId, setOpenId] = useState<string | null>(null);
   const [caps, setCaps] = useState<Caps | null>(null);
@@ -55,7 +60,7 @@ export default function MeetingModal({ roomId = null, onClose }: { roomId?: stri
       {openId ? <DetailView id={openId} onBack={() => { setOpenId(null); setTab("list"); }} />
         : (<>
           <Segmented ariaLabel={mt("title")} value={tab} onChange={(v) => setTab(v as typeof tab)} options={[{ value: "new", label: mt("tabNew") }, { value: "list", label: mt("tabList") }]} />
-          {tab === "new" && <NewMeeting roomId={roomId} caps={caps} onCreated={created} />}
+          {tab === "new" && <NewMeeting roomId={roomId} roomChoice={roomChoice} caps={caps} onCreated={created} />}
           {tab === "list" && <MeetingList roomId={roomId} onOpen={setOpenId} />}
         </>)}
       </div>
@@ -64,7 +69,9 @@ export default function MeetingModal({ roomId = null, onClose }: { roomId?: stri
   );
 }
 
-function NewMeeting({ roomId, caps, onCreated }: { roomId: string | null; caps: Caps | null; onCreated: (id: string) => void }) {
+function NewMeeting({ roomId: fixedRoom, roomChoice, caps, onCreated }: { roomId: string | null; roomChoice: { id: string; name: string } | null; caps: Caps | null; onCreated: (id: string) => void }) {
+  const [alsoRoom, setAlsoRoom] = useState(true);
+  const roomId = fixedRoom ?? (roomChoice && alsoRoom ? roomChoice.id : null);
   const [mode, setMode] = useState<"paste" | "upload">("paste");
   const [title, setTitle] = useState(""); const [text, setText] = useState(""); const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState(""); const [busy, setBusy] = useState(false); const [pct, setPct] = useState<number | null>(null);
@@ -106,6 +113,7 @@ function NewMeeting({ roomId, caps, onCreated }: { roomId: string | null; caps: 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 10 }}>
       <input className="tgx-input" aria-label={mt("fTitle")} placeholder={mt("fTitlePh")} maxLength={80} value={title} onChange={(e) => setTitle(e.target.value)} />
+      {!fixedRoom && roomChoice && <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" data-testid="meeting-also-room" checked={alsoRoom} onChange={(e) => setAlsoRoom(e.target.checked)} />{mt("alsoRoom", { name: roomChoice.name })}</label>}
       <Segmented ariaLabel={mt("title")} value={mode} onChange={(v) => setMode(v as typeof mode)} options={[{ value: "paste", label: mt("modePaste") }, { value: "upload", label: mt("modeUpload") }]} />
       {mode === "paste" ? (<>
         <textarea className="tgx-input" rows={10} aria-label={mt("modePaste")} placeholder={mt("pastePh")} value={text} onChange={(e) => setText(e.target.value)} />
@@ -164,6 +172,8 @@ function DetailView({ id, onBack }: { id: string; onBack: () => void }) {
   const refs = (lines: number[]) => lines.map((n) => <button key={n} type="button" className="tgmt-ref" title={d.lines[n - 1]} onClick={() => jump([n])}>{mt("line", { n })}</button>);
   const linked = (idx: number) => d.links.some((l) => l.idx === idx);
   const personal = !d.roomId;
+  const flags = new Map((d.crosscheck?.flags ?? []).map((f) => [f.line, f] as const));
+  const cc = d.crosscheck;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }} data-tg-meeting={d.id}>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -181,7 +191,7 @@ function DetailView({ id, onBack }: { id: string; onBack: () => void }) {
           <div className="tgx-muted" style={{ fontSize: 12 }}>{mt("draftNote")}{d.postedAt ? ` ${mt("inRoom")}` : ""}</div>
           <div className="tgmt-sec"><h4>{mt("secDecisions")}</h4>
             {s.decisions.length === 0 && <div className="tgx-muted">{mt("none")}</div>}
-            {s.decisions.map((x, i) => <div key={i} className="tgmt-item"><div>{i + 1}. {x.text}{refs(x.lines)}</div></div>)}</div>
+            {s.decisions.map((x, i) => <div key={i} className="tgmt-item"><div>{i + 1}. {x.text}{x.uncertain && <span className="tgmt-flag" style={{ marginLeft: 4 }}>{mt("flagPending")}</span>}{x.numberCheck && <span className="tgmt-flag" style={{ marginLeft: 4 }}>{mt("flagNumber")}</span>}{refs(x.lines)}</div></div>)}</div>
           <div className="tgmt-sec"><h4>{mt("secActions")}</h4>
             {s.actions.length === 0 && <div className="tgx-muted">{mt("none")}</div>}
             {s.actions.map((a) => (
@@ -197,14 +207,27 @@ function DetailView({ id, onBack }: { id: string; onBack: () => void }) {
             {s.suggestions.length === 0 && <div className="tgx-muted">{mt("none")}</div>}
             {s.suggestions.map((x, i) => <div key={i} className="tgmt-item"><div>{i + 1}. {x.text}{refs(x.lines)}</div></div>)}</div>
           {s.dropped > 0 && <div className="tgx-muted" style={{ fontSize: 12 }}>{mt("dropped", { n: s.dropped })}</div>}
+          {s.check && (
+            <div className="tgmt-check" data-tg-selfcheck={s.check.clean ? "clean" : "notes"}><strong>{mt("selfCheck")}</strong>{" "}
+              {s.check.clean ? mt("checkClean", { n: s.check.items }) : [
+                mt("checkSource", { a: s.check.withSource, b: s.check.items }),
+                s.check.actionsNoOwner ? mt("checkNoOwner", { n: s.check.actionsNoOwner }) : "", s.check.actionsNoDue ? mt("checkNoDue", { n: s.check.actionsNoDue }) : "",
+                s.check.uncertain ? mt("checkUncertain", { n: s.check.uncertain }) : "", s.check.numberMismatch ? mt("checkNumber", { n: s.check.numberMismatch }) : "",
+              ].filter(Boolean).join(" ")}
+            </div>)}
         </div>)}
       {d.lines.length > 0 && (<>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <strong style={{ flex: 1 }}>{mt("transcript")}</strong>
+          <strong style={{ flex: 1 }}>{mt("transcript")}{cc && cc.flags.length > 0 && <span className="tgmt-flag" style={{ marginLeft: 8 }} data-testid="flag-count">{mt("flagCount", { n: cc.flags.length })}</span>}</strong>
           <a className="tgx-btn" href={`/api/tg/meeting/${d.id}/transcript`} download style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}><Icon name="down" size={14} />{mt("download")}</a>
         </div>
+        {cc?.enabled && <div className="tgmt-check" data-tg-compare>{cc.error ?? mt("compareTimes", { main: Math.round((cc.mainMs ?? 0) / 100) / 10, other: Math.round((cc.compareMs ?? 0) / 100) / 10, wall: Math.round((cc.wallMs ?? 0) / 100) / 10, agree: Math.round((cc.agreement ?? 0) * 100) })}</div>}
         <div className="tgmt-tx" ref={tx} data-tg-transcript>
-          {d.lines.map((l, i) => <div key={i} data-line={i + 1} className={`tgmt-line${hit.includes(i + 1) ? " hit" : ""}`}><span className="tgmt-n">{i + 1}</span><span>{l}</span></div>)}
+          {d.lines.map((l, i) => {
+            const fl = flags.get(i + 1);
+            const why = fl ? [fl.kinds.includes("glossary") ? mt("flagGlossary", { term: fl.term ?? "" }) : "", fl.kinds.includes("disagree") ? mt("flagDisagree", { other: fl.other ?? "" }) : ""].filter(Boolean).join(" ") : "";
+            return <div key={i} data-line={i + 1} {...(fl ? { "data-flag": fl.kinds.join(",") } : {})} className={`tgmt-line${hit.includes(i + 1) ? " hit" : ""}${fl ? " flag" : ""}`}><span className="tgmt-n">{i + 1}</span><span style={{ flex: 1 }}>{l}</span>{fl && <span className="tgmt-flag" title={why} data-testid="pending-flag">{mt("flagPending")}</span>}</div>;
+          })}
         </div></>)}
       {error && <div className="tgx-err" role="alert">{error}</div>}
       {form !== null && d.prefills[form] && (

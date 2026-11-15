@@ -250,3 +250,27 @@ test("linking an action to an assignment needs an assignment the starter created
   assert.throws(() => svc.linkAction(A(lin), id, 99, mine.id), /No such action/);
   assert.throws(() => svc.linkAction(A(wang), id, 0, mine.id), /No such meeting|Only/);
 });
+
+// 1.1.2-ce item 6: a summary made for a channel is also saved in the channel's own folder (檔案); the page offers the channel when one is on screen.
+test("a channel meeting summary is written to the channel's 檔案 folder as Markdown; a personal one is not", async () => {
+  const { channelFolder } = await import("../directory/map.ts");
+  const { readdirSync } = await import("node:fs");
+  const room = rooms.createRoom(A(wang), "存檔小組", [lin.id]);
+  const m = svc.createFromText(A(wang), { title: "季會", transcript: TRANSCRIPT, roomId: room.id });
+  await until(() => ["done", "failed"].includes(svc.getView(A(wang), m.id).status));
+  const files = readdirSync(channelFolder(room.id, "檔案")).filter((f) => f.startsWith("會議摘要_"));
+  assert.equal(files.length, 1, files.join(","));
+  const text = readFileSync(join(channelFolder(room.id, "檔案"), files[0]), "utf8");
+  assert.match(text, /會議摘要:季會/); assert.match(text, /月結日改成每月 5 號/);
+  assert.equal(auditOf("meeting.channel_file").some((x) => x.roomId === room.id), true);
+  // personal: nothing lands in the channel folder
+  const p = svc.createFromText(A(wang), { title: "個人會", transcript: TRANSCRIPT });
+  await until(() => ["done", "failed"].includes(svc.getView(A(wang), p.id).status));
+  assert.equal(readdirSync(channelFolder(room.id, "檔案")).filter((f) => f.startsWith("會議摘要_")).length, 1);
+});
+test("the 精靈-menu entry offers the channel on screen (source check)", async () => {
+  const src = readFileSync(new URL("../wizards/meeting/ui/MeetingEntry.tsx", import.meta.url), "utf8");
+  assert.match(src, /roomChoice/); assert.match(src, /useUi/);
+  const modal = readFileSync(new URL("../wizards/meeting/ui/MeetingModal.tsx", import.meta.url), "utf8");
+  assert.match(modal, /meeting-also-room/);
+});

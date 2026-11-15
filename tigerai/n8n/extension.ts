@@ -4,7 +4,8 @@ import { defineTool, type InlineExtension } from "@earendil-works/pi-coding-agen
 import { writeAudit } from "../accounts/audit";
 import { identityForSession } from "../adapter/identity";
 import { roomSpeaker } from "../rooms/speaker";
-import { webhookHeader, webhooksFor } from "./service";
+import { callWebhook } from "./call";
+import { webhooksFor } from "./service";
 
 /**
  * What a conversation gets from n8n (community scope):
@@ -36,7 +37,7 @@ export function createN8nExtension(): InlineExtension {
         if (hooks.length === 0) return undefined;
         const lines = hooks.map((h) => `- ${h.name}${h.display_name ? ` (${h.display_name})` : ""}: ${h.description || "(no description)"}`);
         const base = (event as { systemPrompt?: string }).systemPrompt ?? "";
-        return { systemPrompt: `${base}\n\nn8n webhooks you may call with the n8n_webhook tool (pass the name, the lowercase id before any brackets, and a JSON payload with the fields described; the bracketed text is the name people use):\n${lines.join("\n")}` };
+        return { systemPrompt: `${base}\n\nn8n webhooks you may call with the n8n_webhook tool (pass the name, the lowercase id before any brackets, and a payload with the fields described (sent as a JSON body, or as query parameters when the workflow listens on GET: you do not need to care); the bracketed text is the name people use):\n${lines.join("\n")}` };
       });
 
       pi.registerTool(defineTool({
@@ -62,11 +63,11 @@ export function createN8nExtension(): InlineExtension {
           let outcome = "error";
           try {
             const ctl = AbortSignal.any([AbortSignal.timeout(TIMEOUT_MS), ...(signal ? [signal] : [])]);
-            const secret = webhookHeader(hook.id);
-            const res = await fetch(hook.url, { method: "POST", headers: { "content-type": "application/json", ...(secret ? { [secret[0]]: secret[1] } : {}) }, body: JSON.stringify(params.payload ?? {}), signal: ctl });
-            const body = (await res.text()).slice(0, MAX_REPLY_CHARS);
+            const res = await callWebhook(hook, params.payload as Record<string, unknown> | undefined, ctl, MAX_REPLY_CHARS);
+            const ok = res.status >= 200 && res.status < 300;
+            const body = res.body;
             outcome = String(res.status);
-            return text(res.ok ? body : `The workflow answered HTTP ${res.status}: ${body.slice(0, 500)}`);
+            return text(ok ? body : `The workflow answered HTTP ${res.status}: ${body.slice(0, 500)}`);
           } catch (error) {
             outcome = error instanceof Error && error.name === "TimeoutError" ? "timeout" : "unreachable";
             return text(`The workflow could not be reached (${outcome}).`);

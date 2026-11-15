@@ -10,6 +10,8 @@ import { isContextOverflow, isRetryableAssistantError } from "@earendil-works/pi
 export interface ModelRef { provider: string; modelId: string }
 export type FailureReason = "unreachable" | "timeout" | "overloaded" | "server-error" | "model-unavailable" | "transient";
 
+/** Shown when a person's own connection failed and nothing else may take over (the public models are closed to the fallback by default). */
+export const PERSONAL_DOWN_NOTICE = "你的模型連線沒有回應，請檢查金鑰或額度";
 export const FALLBACK_ENTRY_TYPE = "tigerai:model-fallback";
 export type FallbackKind = "fallback" | "skip-unhealthy" | "restore" | "none";
 export interface FallbackRecord {
@@ -107,6 +109,7 @@ export function noticeText(r: Pick<FallbackRecord, "kind" | "from" | "to">, name
   const label = (p: string) => (p === firstId ? "主要連線" : `連線「${nameOf(p)}」`);
   if (r.kind === "restore" && r.to) return `${label(r.to.provider)}已恢復,這次回到「${nameOf(r.to.provider)}」的 ${r.to.modelId}。`;
   const was = label(r.from.provider);
+  if ((r.kind === "none" || !r.to) && r.from.provider.startsWith("tgp-")) return PERSONAL_DOWN_NOTICE;
   if (r.kind === "none" || !r.to) return `${was}沒有回應,而且沒有可以改用的連線。`;
   return `${was}沒有回應,這次改用「${nameOf(r.to.provider)}」的 ${r.to.modelId}。`;
 }

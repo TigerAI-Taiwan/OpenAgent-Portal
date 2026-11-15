@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { dataDir } from "../../config";
 import { ServiceError } from "../../accounts/service";
 import { writeAudit } from "../../accounts/audit";
+import { KEY_REQUIRED, mayUseStoredSecret, sameDest, typedSecret } from "../../accounts/secret-dest";
 
 /**
  * 語音轉文字服務 (speech to text): an OpenAI-compatible /audio/transcriptions endpoint.
@@ -12,9 +13,10 @@ import { writeAudit } from "../../accounts/audit";
  * Environment (TIGERAI_ASR_URL, TIGERAI_ASR_MODEL, TIGERAI_ASR_API_KEY_FILE) is the initial default; a saved value wins.
  */
 
-export interface AsrSettings { url?: string; model?: string; language?: string }
+export interface AsrSettings { url?: string; model?: string; language?: string; glossary?: string; compareUrl?: string; compareModel?: string }
 const settingsFile = () => join(dataDir(), "asr-settings.json");
 export const asrKeyFile = () => join(dataDir(), "asr-api-key");
+export const compareKeyFile = () => join(dataDir(), "asr-compare-key");
 
 function atomicWrite(file: string, text: string): void {
   mkdirSync(dataDir(), { recursive: true, mode: 0o700 });
@@ -36,6 +38,11 @@ export function asrKey(): string | null {
   return null;
 }
 
+/** The 對照模型's own key (never the main key: a second service is a second trust decision). */
+export function compareKey(): string | null {
+  try { const k = readFileSync(compareKeyFile(), "utf8").trim(); return k || null; } catch { return null; }
+}
+
 /** Accepts the full .../audio/transcriptions address or just the base (.../v1) and returns the full address. */
 export function normalizeAsrUrl(v: unknown): string {
   const raw = String(v ?? "").trim().replace(/\/+$/, "");
@@ -46,6 +53,13 @@ export function normalizeAsrUrl(v: unknown): string {
   return /\/audio\/transcriptions$/.test(u.pathname) ? raw : `${raw}/audio/transcriptions`;
 }
 
+/** 公司術語表: one term per line (治具、首件、八D…), at most 60 terms of 30 characters. Used as the ASR hint and for the summary's mis-hearing fix. */
+export function cleanGlossary(v: unknown): string {
+  const terms = String(v ?? "").split(/[\n,，、;；]+/).map((t) => t.trim().replace(/\s+/g, " ").slice(0, 30)).filter(Boolean);
+  return [...new Set(terms)].slice(0, 60).join("\n");
+}
+export function glossaryTerms(): string[] { return cleanGlossary(readAsr().glossary).split("\n").filter(Boolean); }
+
 export function effectiveAsr(): { url: string | null; model: string; language: string | null } {
   const s = readAsr();
   const url = s.url || process.env.TIGERAI_ASR_URL || null;
@@ -53,26 +67,60 @@ export function effectiveAsr(): { url: string | null; model: string; language: s
 }
 export const asrConfigured = (): boolean => !!effectiveAsr().url;
 
+/**
+ * 對照模型: an optional second speech-to-text endpoint (1.1.2-ce). Only used together with a configured main service. The main
+ * transcript stays the record; the second one only marks the places where the two disagree (crosscheck.ts).
+ */
+export function effectiveCompare(): { url: string; model: string; language: string | null } | null {
+  const s = readAsr();
+  if (!s.compareUrl || !asrConfigured()) return null;
+  return { url: s.compareUrl, model: s.compareModel || effectiveAsr().model, language: effectiveAsr().language };
+}
+
 export function viewAsr() {
   const e = effectiveAsr(); const k = asrKey();
-  return { configured: !!e.url, url: e.url ?? "", model: e.model, language: e.language ?? "", hasKey: !!k, keyLast4: k ? k.slice(-4) : null };
+  const c = compareKey(); const s = readAsr();
+  return {
+    configured: !!e.url, url: e.url ?? "", model: e.model, language: e.language ?? "", glossary: cleanGlossary(readAsr().glossary), hasKey: !!k, keyLast4: k ? k.slice(-4) : null,
+    compareUrl: s.compareUrl ?? "", compareModel: s.compareModel ?? "", hasCompareKey: !!c, compareKeyLast4: c ? c.slice(-4) : null,
+  };
 }
 
 export function saveAsr(actorId: string, input: Record<string, unknown>) {
   const next: AsrSettings = { ...readAsr() };
   const changed: string[] = [];
   if ("url" in input) {
+    const before = effectiveAsr().url;
     if (input.url === null || input.url === "") delete next.url; else next.url = normalizeAsrUrl(input.url);
+    // The saved key belongs to the saved address: pointing the service elsewhere needs the key typed again (or removed).
+    const after = next.url ?? effectiveAsr().url;
+    if (before && asrKey() && !sameDest(before, after) && !typedSecret(input.apiKey) && input.apiKey !== null) throw new ServiceError("key_required", KEY_REQUIRED);
     changed.push("url");
   }
   if ("model" in input) { const m = String(input.model ?? "").trim().slice(0, 80); if (m) next.model = m; else delete next.model; changed.push("model"); }
   if ("language" in input) { const l = String(input.language ?? "").trim().slice(0, 12); if (/^[A-Za-z-]*$/.test(l)) { if (l) next.language = l; else delete next.language; } else throw new ServiceError("bad_language", "Language must be a code such as zh"); changed.push("language"); }
+  if ("glossary" in input) { const g = cleanGlossary(input.glossary); if (g) next.glossary = g; else delete next.glossary; changed.push("glossary"); }
+  if ("compareUrl" in input) {
+    const before = next.compareUrl ?? null;
+    if (input.compareUrl === null || input.compareUrl === "") delete next.compareUrl; else next.compareUrl = normalizeAsrUrl(input.compareUrl);
+    // Same rule as the main key: the saved 對照 key belongs to the saved 對照 address.
+    if (before && compareKey() && next.compareUrl && !sameDest(before, next.compareUrl) && !typedSecret(input.compareApiKey) && input.compareApiKey !== null) throw new ServiceError("key_required", KEY_REQUIRED);
+    changed.push("compareUrl");
+  }
+  if ("compareModel" in input) { const m = String(input.compareModel ?? "").trim().slice(0, 80); if (m) next.compareModel = m; else delete next.compareModel; changed.push("compareModel"); }
+  if ("compareApiKey" in input) {
+    if (input.compareApiKey === null) { try { unlinkSync(compareKeyFile()); } catch { /* none */ } }
+    else if (typeof input.compareApiKey === "string" && input.compareApiKey.trim()) atomicWrite(compareKeyFile(), input.compareApiKey.trim() + "\n");
+    else throw new ServiceError("bad_key", "The key must be a non-empty string, or null to remove it");
+    changed.push("compareApiKey");
+  }
   if ("apiKey" in input) {
     if (input.apiKey === null) { try { unlinkSync(asrKeyFile()); } catch { /* none */ } }
     else if (typeof input.apiKey === "string" && input.apiKey.trim()) atomicWrite(asrKeyFile(), input.apiKey.trim() + "\n");
     else throw new ServiceError("bad_key", "The key must be a non-empty string, or null to remove it");
     changed.push("apiKey");
   }
+  if (!next.compareUrl) { try { unlinkSync(compareKeyFile()); } catch { /* none */ } }
   atomicWrite(settingsFile(), JSON.stringify(next, null, 2) + "\n");
   writeAudit("asr.update", actorId, { changed: changed.join(",") });
   return viewAsr();
@@ -87,13 +135,18 @@ export function silentWav(): Uint8Array {
 }
 
 /** Always resolves; the failure is in the result and never contains the key. */
-export async function testAsr(input: { url?: unknown; apiKey?: unknown; model?: unknown }) {
+export async function testAsr(input: { url?: unknown; apiKey?: unknown; model?: unknown; target?: unknown }) {
   const started = Date.now();
   try {
-    const e = effectiveAsr();
+    const cmp = input.target === "compare";
+    const e = cmp ? { url: readAsr().compareUrl ?? null, model: readAsr().compareModel || effectiveAsr().model } : effectiveAsr();
     const url = input.url ? normalizeAsrUrl(input.url) : e.url;
     if (!url) return { ok: false, ms: 0, code: "not_configured", error: "No address is configured" };
-    const key = typeof input.apiKey === "string" && input.apiKey.trim() ? input.apiKey.trim() : asrKey();
+    const typed = typedSecret(input.apiKey);
+    const stored = cmp ? compareKey() : asrKey();
+    // The saved key is sent only to the saved address (H1).
+    if (!mayUseStoredSecret({ hasStored: !!stored, storedDest: e.url, targetDest: url, typedNew: typed })) return { ok: false, ms: 0, code: "key_required", error: KEY_REQUIRED };
+    const key = typed ? String(input.apiKey).trim() : stored;
     const model = typeof input.model === "string" && input.model.trim() ? input.model.trim() : e.model;
     const fd = new FormData();
     fd.append("file", new Blob([new Uint8Array(silentWav())], { type: "audio/wav" }), "test.wav");

@@ -83,20 +83,21 @@ test("members get no model picker and no thinking control; admin keeps both", ()
 });
 
 test("設定 = 帳號 for everyone; the 管理 group is admin only; 技能 holds the work-AI tabs", () => {
-  assert.deepEqual(visibleItems(SETTINGS_TABS, member).map((i) => i.id), ["account"]);
-  assert.deepEqual(visibleItems(SETTINGS_TABS, head).map((i) => i.id), ["account"]);
+  assert.deepEqual(visibleItems(SETTINGS_TABS, member).map((i) => i.id), ["account", "dir"]);
+  assert.deepEqual(visibleItems(SETTINGS_TABS, head).map((i) => i.id), ["account", "dir", "forms", "userlog"], "a department head also gets 表單 and 使用者紀錄 (the server checks the switch and the scope; 到勤與使用 is gone since 1.1.0-ce)");
   assert.ok(!SETTINGS_TABS.some((i) => i.id === "assignments"), "no 交辦單 tab in Settings: it is the 交辦 modal and the bell");
   const adminTabs = visibleItems(SETTINGS_TABS, admin).filter((i) => i.group === "admin").map((i) => i.id);
-  for (const id of ["models", "n8n", "addon", "plugins", "users", "groups", "org", "audit", "deleted"]) assert.ok(adminTabs.includes(id), `設定 › 管理 has ${id}`);
+  for (const id of ["models", "n8n", "connectors", "forms", "addon", "plugins", "users", "groups", "org", "userlog", "audit", "deleted"]) assert.ok(adminTabs.includes(id), `設定 › 管理 has ${id}`);
   for (const id of ["prompts", "roles", "library", "approvals"]) assert.ok(!SETTINGS_TABS.some((i) => i.id === id), `${id} moved out of 設定`);
-  assert.ok(SETTINGS_TABS.filter((i) => i.group === "admin").every((i) => i.roles.length === 1 && i.roles[0] === "admin"));
+  assert.ok(SETTINGS_TABS.filter((i) => i.group === "admin" && i.id !== "userlog" && i.id !== "forms").every((i) => i.roles.length === 1 && i.roles[0] === "admin"));
+  assert.deepEqual(SETTINGS_TABS.find((i) => i.id === "userlog").roles, ["head"], "使用者紀錄 is for heads (admins include head)");
   assert.deepEqual(visibleItems(SKILL_TABS, member).map((i) => i.id), ["prompts", "roles", "n8napps", "available"]);
   assert.deepEqual(visibleItems(SKILL_TABS, admin).filter((i) => i.group === "admin").map((i) => i.id), ["install", "roleAdmin", "library", "approvals", "subagents"]);
   assert.ok(SKILL_TABS.filter((i) => i.group === "admin").every((i) => i.roles.length === 1 && i.roles[0] === "admin"));
   const embeds = [...SETTINGS_TABS, ...SKILL_TABS].filter((i) => i.action.kind === "embed").map((i) => i.action.id).sort();
-  assert.deepEqual(embeds, ["agents", "plugins", "skills"], "the upstream screens are embedded, never opened as upstream's own window; the MCP page is not among them (the community edition has no MCP integration)");
+  assert.deepEqual(embeds, ["agents", "plugins", "skills"], "the upstream screens are embedded, never opened as upstream's own window; the MCP page is not among them (the system-connection tab is ours, not upstream's MCP screen)");
   assert.ok(!SETTINGS_TABS.some((i) => i.id === "mcp"));
-  assert.ok(![...SETTINGS_TABS, ...SKILL_TABS].some((i) => /connector/i.test(i.id)), "the community menus carry no system connections (MCP integration); the consultant pack brings its own entries");
+  assert.deepEqual([...SETTINGS_TABS, ...SKILL_TABS].filter((i) => /connector/i.test(i.id)).map((i) => i.id), ["connectors"], "the community menus carry one system-connection tab (n8n MCP only); the other templates come from the consultant pack");
   assert.equal(visibleItems(NEW_MENU, member).length, 3);
   assert.ok(visibleItems(NEW_MENU, head).some((i) => i.id === "announcement") && !visibleItems(NEW_MENU, member).some((i) => i.id === "announcement"), "新公告 only for heads and admins");
 });
@@ -107,13 +108,13 @@ test("upstream's own SettingsPanel is not opened from our UI any more (openUpstr
 });
 
 test("labels are i18n keys that exist in the zh table", () => {
-  const i18n = readFileSync(join(root, "tigerai/pages/i18n.ts"), "utf8") + readFileSync(join(root, "tigerai/pages/i18n-addon.ts"), "utf8") + readFileSync(join(root, "tigerai/pages/i18n-n8n.ts"), "utf8");
+  const i18n = readFileSync(join(root, "tigerai/pages/i18n.ts"), "utf8") + readFileSync(join(root, "tigerai/pages/i18n-addon.ts"), "utf8") + readFileSync(join(root, "tigerai/pages/i18n-n8n.ts"), "utf8") + readFileSync(join(root, "tigerai/pages/i18n-userlog.ts"), "utf8") + readFileSync(join(root, "tigerai/pages/i18n-knowledge.ts"), "utf8") + readFileSync(join(root, "tigerai/pages/i18n-school.ts"), "utf8") + readFileSync(join(root, "tigerai/pages/i18n-web.ts"), "utf8") + readFileSync(join(root, "tigerai/pages/i18n-mcp.ts"), "utf8") + readFileSync(join(root, "tigerai/pages/i18n-forms.ts"), "utf8") + readFileSync(join(root, "tigerai/pages/i18n-v11.ts"), "utf8") + readFileSync(join(root, "tigerai/pages/i18n-org.ts"), "utf8");
   for (const item of [...SIDEBAR_BOTTOM, ...NEW_MENU, ...SETTINGS_TABS, ...SKILL_TABS]) assert.ok(new RegExp(`\\b${item.labelKey}:`).test(i18n), `missing i18n key ${item.labelKey}`);
 });
 
 test("the bell sits in the toolbar.right slot (no new upstream hook), next to sign-out, and the bubble has no list entry", () => {
   const slots = readFileSync(join(root, "tigerai/ui/slots.tsx"), "utf8");
-  assert.match(slots, /"toolbar\.right": \(\) => <><BellButton \/><SignOutButton \/><\/>/);
+  assert.match(slots, /"toolbar\.right": \(\) => <><IdleWatcher \/><BellButton \/><SignOutButton \/><\/>/);
   const layout = readFileSync(join(root, "tigerai/ui/layout.ts"), "utf8");
   assert.ok(!/sidebar\.list\.extra.*bulletin/i.test(layout));
   const parts = readFileSync(join(root, "tigerai/ui/parts.tsx"), "utf8");

@@ -24,18 +24,19 @@ export async function buildXlsx(sheets) {
   return zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
 }
 
-/** The sample organisation sheet: fictional company, one head per department. */
+/** The sample organisation sheet (org.xlsx format: units / members / lists). */
 export function sampleOrgSheets(prefix = "") {
+  const em = (n) => `${prefix.toLowerCase()}${n}@example.com`;
   return [
-    { name: "units", rows: [["unit", "parent", "description"], [`${prefix}Acme Corp`, "", "Whole company"], [`${prefix}Sales`, `${prefix}Acme Corp`, "Sales department"], [`${prefix}Support`, `${prefix}Acme Corp`, "Customer support"]] },
+    { name: "units", rows: [["name", "parent", "description", "managers", "confirmers"], [`${prefix}Acme Corp`, "", "Whole company", "", ""], [`${prefix}Sales`, `${prefix}Acme Corp`, "Sales department", em("sam"), ""], [`${prefix}Support`, `${prefix}Acme Corp`, "Customer support", em("kim"), ""]] },
     {
       name: "members",
-      rows: [["email", "name", "action", "unit", "manager"],
-        [`${prefix.toLowerCase()}sam@example.com`, `${prefix}Sam`, "hire", `${prefix}Sales`, "yes"],
-        [`${prefix.toLowerCase()}pat@example.com`, `${prefix}Pat`, "hire", `${prefix}Sales`, "no"],
-        [`${prefix.toLowerCase()}kim@example.com`, `${prefix}Kim`, "hire", `${prefix}Support`, "yes"]],
-      dropdowns: [{ col: "C", values: ["hire", "leave", "keep"] }, { col: "E", values: ["yes", "no"] }],
+      rows: [["action", "email", "employeeId", "name", "role", "status", "units"],
+        ["hire", em("sam"), "", `${prefix}Sam`, "member", "", `${prefix}Sales`],
+        ["hire", em("pat"), "", `${prefix}Pat`, "member", "", `${prefix}Sales`],
+        ["hire", em("kim"), "", `${prefix}Kim`, "member", "", `${prefix}Support`]],
+      dropdowns: [{ col: "A", values: ["hire", "leave"] }, { col: "E", values: ["admin", "member"] }],
     },
-    { name: "lists", rows: [["action", "manager"], ["hire", "yes"], ["leave", "no"], ["keep", ""]] },
+    { name: "lists", rows: [["action", "role"], ["hire", "admin"], ["leave", "member"]] },
   ];
 }

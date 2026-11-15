@@ -54,9 +54,10 @@ registerWizard(kind)      // 在 engine.ts 載入時內建三支已註冊;新的
 
 | 方法與路徑 | 誰 | 內容 |
 |---|---|---|
-| `GET wizards/rooms/:room/settings` | 頻道建立者、所屬部門主管、管理員 | `{settings, runs[12], kinds, tick?}`(`tick` 只給管理員) |
-| `PATCH wizards/rooms/:room/settings` | 同上 | `{daily?:{enabled?,at?:"HH:MM"}, weekly?:{enabled?,at?,weekday?:1-7}, skill?:{…}, aspects?:{record?,suggest?,supervise?,audit?,remind?}}`;只改有帶的欄位;稽核 `wizard.settings` |
+| `GET wizards/rooms/:room/settings` | 頻道建立者、所屬部門主管、管理員 | `{settings, defaults, runs[12], kinds, tick?}`(`settings.aspects` 是 `{daily:{…}, weekly:{…}}`,`defaults` 是建議預設)(`tick` 只給管理員) |
+| `PATCH wizards/rooms/:room/settings` | 同上 | `{daily?:{enabled?,at?:"HH:MM"}, weekly?:{enabled?,at?,weekday?:1-7}, skill?:{…}, aspects?:{daily?:{record?,suggest?,supervise?,audit?,remind?}, weekly?:{…}}, reset?:["daily"\|"weekly"]}`;只改有帶的欄位;`reset` 刪掉該支的五個勾選列(回到建議預設);舊的平面寫法 `aspects:{record:true}` 同時套用到兩支;稽核 `wizard.settings` |
 | `POST wizards/rooms/:room/run` | 同上 | `{kind:"daily"\|"weekly"\|"skill"}` 立即執行 / 重跑。回 `{run, outcome:"queued"\|"skipped"}`;`skipped` 的原因在 `run.error`。頻道已關閉 409 `room_closed`;同一支正在跑 409 `already_running` |
+| `POST wizards/rooms/:room/adhoc` | 頻道成員(含主管、管理員) | **訊息分析**:`{aspects:["record","suggest",…], range:{type:"today"\|"days"\|"week"\|"custom", n?, from?, to?}, slides?:bool}`。回 `{run, outcome, routing:{toHeadsOnly, private}}`。同頻道 5 分鐘一次(429 `rate_limited`,略過的不算);天數與自訂範圍最多 31 天(400 `bad_range`);沒選面向 400 `bad_aspects`;非成員 403/404;頻道已關 409。`trigger` 是 `manual-adhoc` |
 | `POST wizards/runs/:run/confirm` | 同上 | 草稿 → 已確認;稽核 `wizard.confirm`;只能一次(409) |
 | `POST wizards/items/:item/adopt` / `dismiss` | 頻道建議:同上;技能提案:**管理員** | 稽核 `wizard.adopt` / `wizard.dismiss`;技能採用另有 `skill.approve` 並寫成 `<agent dir>/skills/<名稱>/SKILL.md` |
 | `POST wizards/items/:item/ack` | 該項目的收件人本人 | 「我知道了」;別人(含管理員)得 404 |
@@ -68,3 +69,12 @@ registerWizard(kind)      // 在 engine.ts 載入時內建三支已註冊;新的
 ## 資料表
 
 `wizard_settings`(頻道、key=`daily|weekly|skill|aspect:<面向>`)、`wizard_runs`(每次執行,含 `period` 日或 ISO 週、`confirm_state`、`post_seq`)、`wizard_items`(每則結果與收件人、出處 JSON、狀態 open/adopted/dismissed/done)、`wizard_meta`(上次收到排程的時間)。都在 `db/store.ts` 的 SCHEMA 裡(`CREATE TABLE IF NOT EXISTS`,舊資料庫自動長出來)。
+
+
+## 1.1.0-ce 的增補
+
+- **面向設定是每支精靈一組**:`settings.ts` 的 `ASPECT_DEFAULTS = {daily, weekly}`;`wizard_settings.key` 為 `aspect:daily:<面向>` / `aspect:weekly:<面向>`(舊的 `aspect:<面向>` 在沒有新列時繼續生效)。`collectFacts` / `factItems` 收的是 `{aspects: Record<Aspect,bool>}`,要用哪一組由種類決定。
+- **新種類 `adhoc`(訊息分析)**:`wizards/kinds/adhoc.ts`,參數 `{aspects, sinceTs, untilTs, rangeLabel, slides, requesterId, requesterName, alsoTo}` 存在 run 的 `input`;`alsoTo` 是**伺服器**依要求者身分決定的(主管/建立者/管理員 = 自己),前端送的值不會被採信。啟動走 `wizards/adhoc.ts requestAdhoc()`(權限、範圍、5 分鐘限制),`handleAdhocMention()` 給 `@AI` 句子用,解析在 `wizards/adhoc-parse.ts`(純函式,`parseAdhoc` / `parseRange` / `parseAspects`)。
+- **報告**:`wizards/report.ts`:`reportDecks()`(純函式,頻道版與主管版兩份定義)、`makeReport()`(`buildPptx` → `convertToPdf` → `saveDeck`,不丟例外)。新種類要附投影片時呼叫它;私下的主管版項目帶 `extra.deck`(deck id)。
+- **每日摘要的 `prepare`** 可回 `noModel`:沒有新訊息但有提醒、或只勾了提醒時不呼叫模型。
+- 測試:`tigerai/tests/ce-aspects.test.mjs`(預設、重設、提醒由程式算、週報五面向與報告、隱私分流、訊息分析 API、解析器、限流、`@AI`)。

@@ -5,6 +5,9 @@ import { join } from "node:path";
 import { dataDir, tgEnabled } from "../config";
 import { identityForSession } from "./identity";
 import { promptsVisibleTo } from "../prompts/service";
+import { mySkillsDir } from "../skills/builtin";
+import { existsSync } from "node:fs";
+import { unitSkillDirs } from "../skills/mine";
 
 /**
  * Delivers the prompt library through pi's own mechanism: an extension answers
@@ -36,7 +39,12 @@ export function createPromptLibraryExtension(cwd: string): InlineExtension {
         try {
           let sid: string | undefined;
           try { sid = ctx.sessionManager.getSessionId(); } catch { sid = undefined; }
-          return { promptPaths: [materialise(identityForSession(sid, cwd))] };
+          const who = identityForSession(sid, cwd);
+          // The person's own skills (copies of built-ins and skills they made) live in their folder, which the SDK ignores as an
+          // untrusted project folder; delivering them here shows them in that person's conversations only. Skills add words, not rights.
+          const mine = who ? mySkillsDir(who.id) : null;
+          const skillPaths = [...(mine && existsSync(mine) ? [mine] : []), ...(who ? unitSkillDirs(who.id) : [])];
+          return { promptPaths: [materialise(who)], ...(skillPaths.length ? { skillPaths } : {}) };
         } catch (error) {
           console.error("[tigerai] prompt library:", error instanceof Error ? error.message : error);
           return undefined;

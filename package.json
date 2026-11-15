@@ -1,6 +1,6 @@
 {
   "name": "@agegr/pi-web",
-  "version": "0.16.0",
+  "version": "1.1.2-ce",
   "description": "Web UI for the pi coding agent",
   "homepage": "https://github.com/agegr/pi-web#readme",
   "repository": {
@@ -36,11 +36,11 @@
   ],
   "scripts": {
     "postinstall": "node bin/prepare-terminal.js",
-    "dev": "next dev -H 127.0.0.1 -p 30141",
-    "dev:lan": "next dev -H 0.0.0.0 -p 30141",
+    "dev": "next dev -H 127.0.0.1 -p 30161",
+    "dev:lan": "next dev -H 0.0.0.0 -p 30161",
     "build": "next build --webpack",
-    "start": "next start -H 127.0.0.1 -p 30141",
-    "start:lan": "next start -H 0.0.0.0 -p 30141",
+    "start": "next start -H 127.0.0.1 -p 30161",
+    "start:lan": "next start -H 0.0.0.0 -p 30161",
     "lint": "eslint .",
     "test:terminal": "node e2e/terminal.mjs",
     "test:e2e": "node e2e/run.mjs",
@@ -48,7 +48,6 @@
     "release": "npm version patch -m \"Release v%s\""
   },
   "dependencies": {
-    "jszip": "^3.10.1",
     "@earendil-works/pi-agent-core": "1.5.2",
     "@earendil-works/pi-ai": "1.5.2",
     "@earendil-works/pi-codemode": "1.5.2",
@@ -57,11 +56,15 @@
     "@earendil-works/pi-schema": "1.5.2",
     "@earendil-works/pi-telemetry": "1.5.2",
     "@earendil-works/pi-tui": "1.5.2",
+    "@pdf-lib/fontkit": "^1.1.1",
     "@xterm/addon-fit": "0.11.0",
     "@xterm/xterm": "6.0.0",
     "js-yaml": "^5.2.3",
+    "jszip": "^3.10.1",
     "next": "16.4.4",
     "node-pty": "1.2.0-beta.15",
+    "opencc-js": "^1.0.5",
+    "pdf-lib": "^1.17.1",
     "proper-lockfile": "4.1.2",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",

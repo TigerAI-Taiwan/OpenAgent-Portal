@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LicenseRef-TigerAI-SUL-Draft
 import { getRoom, roomIsOpen } from "../../rooms/service";
 import { deliverExternalItem, recordExternalRun } from "../engine";
+import { stripEnd } from "../format";
 import { supervisors } from "../shared";
 
 /**
@@ -41,7 +42,7 @@ export const defaultHost: WizardHost = {
     if (!room) return;
     const run = recordExternalRun({ kind: "meeting", roomId, runnerId: room.owner_id, requestedBy: null, ref: item.refId });
     deliverExternalItem(run, {
-      aspect: item.kind, userId: item.userId, text: `${item.title}。${item.body}`,
+      aspect: item.kind, userId: item.userId, text: `${stripEnd(item.title)}。${item.body}`,
       sources: item.sources.map((s) => ({ t: "x" as const, label: s.label, quote: s.quote })),
     });
   },

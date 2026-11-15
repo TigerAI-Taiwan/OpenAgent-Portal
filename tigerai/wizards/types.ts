@@ -12,10 +12,10 @@ import type { Source } from "./facts";
  */
 
 export interface RunRow {
-  id: string; kind: string; room_id: string | null; runner_id: string; requested_by: string | null; trigger: "schedule" | "manual";
+  id: string; kind: string; room_id: string | null; runner_id: string; requested_by: string | null; trigger: "schedule" | "manual" | "manual-adhoc";
   period: string | null; status: "running" | "done" | "failed" | "skipped"; error: string | null; created_at: number; started_at: number | null; finished_at: number | null;
   from_seq: number | null; to_seq: number | null; post_seq: number | null; draft: string | null; input: string | null;
-  confirm_state: "draft" | "confirmed" | null; confirmed_by: string | null; confirmed_at: number | null;
+  confirm_state: "draft" | "confirmed" | null; confirmed_by: string | null; confirmed_at: number | null; confirm_assignment_id?: string | null;
 }
 
 export interface RunContext {

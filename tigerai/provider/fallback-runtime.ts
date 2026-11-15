@@ -6,6 +6,7 @@ import {
   type Conn, type FailureReason, type FallbackRecord, type ModelRef,
 } from "./fallback-logic";
 import { listConnections } from "./settings";
+import { isPersonalProvider, personalRequired, personalSwitches, usablePersonal } from "./personal";
 
 /**
  * Wires the connection fallback into one conversation.
@@ -27,7 +28,7 @@ export interface Host {
   /** Switch this conversation's model (not the global default). */
   switchTo(ref: ModelRef): Promise<boolean>;
   /** Enabled connections in the administrator's order, with the models this conversation's registry knows for each. */
-  connections(): Conn[];
+  connections(from?: ModelRef): Conn[];
   record(r: FallbackRecord): void;
   sessionId(): string;
   now?(): number;
@@ -105,7 +106,7 @@ export class FallbackController {
       this.tried.add(from.provider);
       const prior = Array.isArray(event.entries) ? event.entries : [];
       const preferred = this.preferred ?? from;
-      for (const cand of rankCandidates({ from, connections: this.host.connections(), tried: this.tried, now: this.now() })) {
+      for (const cand of rankCandidates({ from, connections: this.host.connections(from), tried: this.tried, now: this.now() })) {
         this.tried.add(cand.provider);
         let ok = false;
         try { ok = await this.doSwitch(cand); } catch (e) { console.error("[tigerai] fallback: switching to", cand.provider, "failed:", e instanceof Error ? e.message : e); }
@@ -133,7 +134,7 @@ export class FallbackController {
     try {
       const cur = this.host.current();
       if (!cur) return;
-      const conns = this.host.connections();
+      const conns = this.host.connections(cur);
       const stamp = () => new Date(this.now()).toISOString();
       if (this.preferred && sameModel(this.preferred, cur)) this.preferred = null;
       if (this.preferred) {
@@ -175,11 +176,34 @@ export function connectionsFor(models: { provider: string; id: string }[], list 
     .filter((c) => c.models.length > 0);
 }
 
+/**
+ * The list one conversation falls back along. A person's own connections come first (in their order), then the public ones, unless the
+ * administrator closed the public models to people who have a key of their own. With 互相備援 (default on) a failure of a PUBLIC model, after the public chain, moves the
+ * person's own conversation onto their personal connection, and the other way round; with it off each side stands alone. `owner` is null for every conversation that
+ * cannot have personal connections (rooms, automations): the list is then exactly the public one.
+ */
+export function connectionsForOwner(models: { provider: string; id: string }[], owner: { id: string; role: string } | null, from?: ModelRef): Conn[] {
+  const pub = connectionsFor(models);
+  if (!owner) return pub;
+  const mine: Conn[] = usablePersonal(owner.id)
+    .map((c) => ({ id: c.id, name: c.name, defaultModel: c.models[0] ?? null, models: c.models.filter((m) => models.some((x) => x.provider === c.id && x.id === m)) }))
+    .filter((c) => c.models.length > 0);
+  // A public failure falls back along the whole public chain first, then (mutual fallback on) to the person's own connections. Rooms never get here (owner null).
+  if (from && !isPersonalProvider(from.provider)) return personalRequired(owner) && mine.length > 0 ? mine : mutual0() ? [...pub, ...mine] : pub;
+  // A failed PERSONAL connection moves to the public models too (互相備援), unless the administrator switched that off.
+  const mutual = personalSwitches().mutualFallback;
+  if (from && isPersonalProvider(from.provider) && !mutual) return mine;
+  return personalRequired(owner) && mine.length > 0 ? mine : [...mine, ...pub];
+}
+
+const mutual0 = () => personalSwitches().mutualFallback;
 export function connectionName(id: string, list = listConnections()): string { return list.find((c) => c.id === id)?.name ?? id; }
 
 /** Audit row: which conversation, from which connection to which. Names are stored (a renamed connection still reads right later). */
 export function auditFallback(sessionId: string, r: FallbackRecord): void {
   if (r.kind === "restore") return;
+  // The audit records who added, changed or deleted a personal connection, not what they used (spec): a personal connection never appears here.
+  if (isPersonalProvider(r.from.provider) || (r.to && isPersonalProvider(r.to.provider))) return;
   try {
     writeAudit("model.fallback", null, {
       sessionId, kind: r.kind, reason: r.reason,
@@ -189,7 +213,7 @@ export function auditFallback(sessionId: string, r: FallbackRecord): void {
   } catch { /* the audit must not break a turn */ }
 }
 
-export function createFallbackExtension(ctxInfo: { sessionId: string }): InlineExtension {
+export function createFallbackExtension(ctxInfo: { sessionId: string; owner?: { id: string; role: string } | null }): InlineExtension {
   return {
     name: "tigerai-model-fallback",
     hidden: true,
@@ -204,7 +228,7 @@ export function createFallbackExtension(ctxInfo: { sessionId: string }): InlineE
           const model = ctxRef?.modelRegistry.find(ref.provider, ref.modelId);
           return model ? pi.setModel(model as Parameters<typeof pi.setModel>[0]) : false;
         },
-        connections: () => connectionsFor(ctxRef?.modelRegistry.getAll() ?? []),
+        connections: (from) => connectionsForOwner(ctxRef?.modelRegistry.getAll() ?? [], ctxInfo.owner ?? null, from),
         record: (r) => auditFallback(realId(), r),
         sessionId: () => realId(),
       };

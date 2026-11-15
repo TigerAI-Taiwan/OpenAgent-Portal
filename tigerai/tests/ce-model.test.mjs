@@ -70,7 +70,7 @@ test("old single configuration (saved URL + key file, or environment) becomes co
   // the first write of the list keeps connection #1 intact and drops the legacy fields
   const gw = await gateway(["m1", "m2"], "sk-old-1111");
   try {
-    await call(admin, "PATCH", "admin/models/connections/tigerai", { baseUrl: gw.url });
+    await call(admin, "PATCH", "admin/models/connections/tigerai", { baseUrl: gw.url, apiKey: "sk-old-1111" });
     const saved = JSON.parse(readFileSync(join(process.env.TIGERAI_DATA_DIR, "models-settings.json"), "utf8"));
     assert.ok(Array.isArray(saved.connections) && saved.connections[0].id === "tigerai" && saved.baseUrl === undefined);
     assert.equal(st.connKey("tigerai"), "sk-old-1111", "the key file did not move");
@@ -141,9 +141,9 @@ test("connections: admin only, keys in mode-600 files, order and disabled state 
 
 test("a connection whose address stops answering keeps its last model list (so a fallback can still be planned)", async () => {
   const g = await gateway(["tigerai-fast"], null);
-  await call(admin, "PATCH", "admin/models/connections/tigerai", { baseUrl: g.url, offered: null });
+  await call(admin, "PATCH", "admin/models/connections/tigerai", { baseUrl: g.url, offered: null, apiKey: "sk-one-1111" });
   g.close();
-  await call(admin, "PATCH", "admin/models/connections/tigerai", { baseUrl: "http://127.0.0.1:9/v1" });
+  await call(admin, "PATCH", "admin/models/connections/tigerai", { baseUrl: "http://127.0.0.1:9/v1", apiKey: "sk-one-1111" });
   assert.deepEqual(modelsJson().tigerai.models.map((m) => m.id), ["tigerai-fast"]);
   assert.equal(modelsJson().tigerai.baseUrl, "http://127.0.0.1:9/v1");
 });

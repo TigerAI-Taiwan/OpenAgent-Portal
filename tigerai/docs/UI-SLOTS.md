@@ -14,7 +14,7 @@ Goal: later UI changes (move a button, rename, reorder, hide per role, add a 功
 
 | Hook | Slot / element | Upstream file | Shows |
 |---|---|---|---|
-| H14 | `brand.version` | components/ChatWindow.tsx (empty conversation hero) | "TigerAI Agent Portal 1.0.0-ce" instead of "web v.. pi v.." |
+| H14 | `brand.version` | components/ChatWindow.tsx (empty conversation hero) | "TigerAI Agent Portal 1.1.0-ce" instead of "web v.. pi v.." |
 | H15 | `composer.state` | components/ChatWindow.tsx (around `chatInputElement`) | disabled composer 「這段對話只能從頻道使用」 for a room's backing conversation (`GET /api/tg/sessions/:id/info`) |
 | H16 | `useTg()` + `keep("composer.model")`, `keep("composer.thinking")`, `text("composer.placeholder")` | components/ChatInput.tsx (hook line + 3 edited lines) | members: no model picker, no thinking control; short placeholder |
 | H17 | `composer.functions` | components/ChatInput.tsx (after the model picker) | 功能 menu: AI 角色 / n8n 應用 / 一般對話 |
@@ -263,4 +263,24 @@ Hooks: **29 ids, 35 locations, unchanged.** Upstream diff outside `tigerai/`, `p
 - **設定 → 管理 → 顧問包**(`ui/AddonPage.tsx`,只有管理員):未安裝 / 已安裝版本+到期日 / 授權無效的原因、顧問包會多哪些功能、如何取得。
 - 精靈設定視窗的排程狀態列依 `mode` 顯示:內建排程(「上次檢查」)或外部排程(顧問包)。
 - 登入頁與名稱彈窗多一行「based on pi-agent and pi-web」(`ui/BasedOn.tsx`,連到兩個專案)。左上只放主名 OpenAgent Portal。
-- 社群版選單仍有「n8n」頁籤(Webhook 與金鑰)、技能的「n8n 應用」、功能清單的 n8n 區塊(簡易 n8n 示範);沒有「系統連接」(MCP)頁籤與功能區塊,也沒有「精靈排程(n8n)」頁籤,它們由顧問包帶來(`menus`)。
+- 社群版選單仍有「n8n」頁籤(Webhook 與金鑰)、技能的「n8n 應用」、功能清單的 n8n 區塊(簡易 n8n 示範);設定 → 管理有一個「系統連接」頁籤(只有 n8n 範本,`ui/Connectors.tsx`)和一個「表單」頁籤(`ui/Forms.tsx`,管理員與部門主管);「系統連接」的功能清單區塊與「精靈排程(n8n)」頁籤由顧問包帶來(`menus`)。沒有新增上游插槽或 hook。
+
+## CE-byok (2026-11-15): 我的模型連線
+- **No new hook id** (29 ids / 35 locations, unchanged; upstream diff outside `tigerai/`: none). The gate (H02) rewrites `GET /api/models` for a person who has connections; `startExtensions` (H08) and `pendingRoleFor` (H06) got behaviour inside our own functions.
+- 設定 › 帳號 gets a card 「我的模型連線」 (`ui/PersonalModels.tsx`, rendered from `Account()` in `SettingsOverlay.tsx`): rows with number, name, ↑ ↓, enable switch, 編輯, 刪除 (confirm dialog); 新增 / 編輯 in the shared `Modal` (name, address, key, model names, 測試連線 with clickable model chips). 設定 › 管理 › 模型 gets the card 「成員自己的金鑰」 (`PersonalAdmin`: two switches and the per-person count).
+- `layout.ts` `upstreamVisible("composer.model")` is also true for a member with `me.personalModels > 0`; `composer.thinking` and `composer.tools` stay admin-only. After any change the card calls `loadMe(true)` so the picker appears or goes without a reload.
+- Texts: `pages/i18n-byok.ts` (zh + en, merged into the big table by four lines in `i18n.ts`); gate error texts are translated by `ui/error-translate.ts`.
+
+## ce-userlog: 使用者紀錄
+No new hook id, no new upstream line (29 hook ids, 35 locations, unchanged). The tab `userlog` in `SETTINGS_TABS` (group 管理, roles `["head"]`, so heads and admins; `SettingsOverlay` hides it from a head while the switch is off, `canUserLog` from `/api/tg/me`). Last-online is recorded in the existing H02 gate. Page: `ui/UserLog.tsx` (table → conversation list modal → read-only reader modal, all the shared `Modal`). The fixed notice line sits in 設定 › 帳號 (`data-tg-userlog-notice`).
+
+## 講義知識(feat/ce-knowledge):沒有新增 hook
+
+- 「部門 AI 角色」是 SKILL_TABS 新的一項(`deptRoles`,roles `head`;管理員也看得到),畫面 `tigerai/ui/DeptRoles.tsx`。
+- `composer.state` 插槽現在多包一層 `TextAttach`(`tigerai/ui/TextAttach.tsx`,`display:contents` 的 div,捕獲階段攔截全是 .md/.txt 的選檔與放檔);其他檔案照上游。沒有改任何上游檔案,H15 不變。
+
+## ce-school: 註冊 and 到勤與使用
+No new hook id (29 ids / 35 locations, unchanged; no new upstream line). The gate (H02) lets `/tg/register` and `/api/tg/register` through only while the switch is on. Our login page (`pages/TgApp.tsx`) draws 「註冊」 from `register/status`; the register page is the same file. The switch card (`RegisterAdmin`) sits on top of 設定 › 管理 › 成員; the join codes card (`JoinCodes`) on top of 使用者紀錄 (`ui/Register.tsx`). New settings tab `usage` (`ui/UsageReport.tsx`, group 管理, roles `["head"]`, hidden for a head while 「主管可查看對話」 is off, like `userlog`). Texts: `pages/i18n-school.ts`.
+
+## ce-web-slides: 上網查資料 (and 文件轉檔服務)
+No new hook id (29 ids / 35 locations, unchanged; no upstream line). New settings tab `web` (`SETTINGS_TABS`, group 管理, roles `["admin"]`, icon `globe` added to the kit) rendering `ui/WebAdmin.tsx`: card 「上網查資料」 (switch, provider, SearXNG address or API key, groups, 測試, 儲存) and card 「文件轉檔服務」 (address, 測試). Texts: `pages/i18n-web.ts` (the label test in `ui-slots.test.mjs` reads it). The tool side is inline extensions added by `startExtensions` (H08); the download route is `/api/tg/slides/<id>` in `api/router.ts`; the audit labels are in `accounts/audit-text.ts`.

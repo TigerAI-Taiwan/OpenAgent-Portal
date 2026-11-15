@@ -176,7 +176,7 @@ test("rooms: a head reads as head-viewer (audited once per hour), cannot post un
   assert.equal((await call(carol, "GET", `rooms/${room}`)).json.myRole, "head");
 });
 
-test("rooms: delete is admin only; soft; hidden from all; restore; 30-day purge", async () => {
+test("rooms: delete (archive) is admin only; hidden from all; restore; never purged automatically; manual purge needs two confirmations", async () => {
   const r = (await call(alice, "POST", "rooms", { name: "Doomed", memberIds: [bob.id] })).json.room.id;
   await call(bob, "POST", `rooms/${r}/messages`, { text: "keep?" });
   for (const u of [bob, alice, carol, eve]) assert.ok([403, 404].includes((await call(u, "DELETE", `rooms/${r}`)).status), `delete ${u.name}`);
@@ -195,24 +195,35 @@ test("rooms: delete is admin only; soft; hidden from all; restore; 30-day purge"
   assert.equal((await call(bob, "GET", "admin/rooms/deleted")).status, 403);
   assert.equal((await call(bob, "POST", `admin/rooms/${r}/restore`)).status, 403);
   const list = (await call(admin, "GET", "admin/rooms/deleted")).json.rooms;
-  assert.equal(list.length, 1); assert.equal(list[0].daysLeft, 30); assert.equal(list[0].deletedByName, "Admin");
+  assert.equal(list.length, 1); assert.equal(list[0].daysLeft, undefined); assert.equal(list[0].deletedByName, "Admin");
   assert.equal((await call(admin, "POST", `admin/rooms/${r}/restore`)).status, 200);
   assert.equal((await call(bob, "GET", `rooms/${r}`)).status, 200);
   assert.ok(audits("room.restore").length === 1);
-  // delete again, age it past 30 days: purged on the next read; restore then fails
+  // 封存 only (decision 10): ageing it past 30 days changes nothing; only the admin's manual, doubly confirmed purge removes data
   await call(admin, "DELETE", `rooms/${r}`);
-  getDb().prepare("UPDATE rooms SET deleted_at=? WHERE id=?").run(Date.now() - 31 * 86400_000, r);
-  assert.equal((await call(admin, "GET", "admin/rooms/deleted")).json.rooms.length, 0);
+  getDb().prepare("UPDATE rooms SET deleted_at=? WHERE id=?").run(Date.now() - 400 * 86400_000, r);
+  assert.equal((await call(admin, "GET", "admin/rooms/deleted")).json.rooms.length, 1, "still archived after a year");
+  assert.equal(getDb().prepare("SELECT COUNT(*) AS n FROM room_messages WHERE room_id=?").get(r).n >= 1, true, "messages are kept");
+  assert.equal(audits("room.purge").length, 0);
+  assert.equal((await call(bob, "POST", `admin/rooms/${r}/purge`, { confirm: true, typedName: "Doomed" })).status, 403);
+  assert.equal((await call(admin, "POST", `admin/rooms/${r}/purge`, { typedName: "Doomed" })).status, 409, "first confirmation missing");
+  assert.equal((await call(admin, "POST", `admin/rooms/${r}/purge`, { confirm: true, typedName: "doomed?" })).status, 409, "second confirmation (the name) wrong");
+  assert.equal(getDb().prepare("SELECT COUNT(*) AS n FROM rooms WHERE id=?").get(r).n, 1);
+  assert.equal((await call(admin, "POST", `admin/rooms/${r}/purge`, { confirm: true, typedName: "Doomed" })).status, 200);
   assert.equal(getDb().prepare("SELECT COUNT(*) AS n FROM rooms WHERE id=?").get(r).n, 0);
-  assert.equal(getDb().prepare("SELECT COUNT(*) AS n FROM room_messages WHERE room_id=?").get(r).n, 0, "messages are purged too");
+  assert.equal(getDb().prepare("SELECT COUNT(*) AS n FROM room_messages WHERE room_id=?").get(r).n, 0, "messages go with a manual purge");
   assert.equal((await call(admin, "POST", `admin/rooms/${r}/restore`)).status, 404);
   assert.equal(audits("room.purge").length, 1);
+  assert.equal(audits("room.purge")[0].actor_id, admin.id, "the audit names the administrator who did it");
+  // a live (not archived) channel cannot be purged
+  const live = (await call(alice, "POST", "rooms", { name: "Live" })).json.room.id;
+  assert.equal((await call(admin, "POST", `admin/rooms/${live}/purge`, { confirm: true, typedName: "Live" })).status, 409);
   // the append-only guard is back in place after a purge
   assert.throws(() => getDb().prepare("DELETE FROM room_messages WHERE room_id=?").run(room));
-  // 29 days is still restorable
+  // a long time archived is still restorable
   const r2 = (await call(alice, "POST", "rooms", { name: "Almost" })).json.room.id;
   await call(admin, "DELETE", `rooms/${r2}`);
-  getDb().prepare("UPDATE rooms SET deleted_at=? WHERE id=?").run(Date.now() - 29 * 86400_000, r2);
+  getDb().prepare("UPDATE rooms SET deleted_at=? WHERE id=?").run(Date.now() - 200 * 86400_000, r2);
   assert.equal((await call(admin, "POST", `admin/rooms/${r2}/restore`)).status, 200);
 });
 
@@ -353,7 +364,7 @@ test("member commands: model fields on a prompt or a new conversation are refuse
   assert.equal(cmds.memberCommandDenied({ type: "prompt", message: "hi", cwd: "/x" }, cmds.MEMBER_NEW_COMMANDS), null);
   assert.ok(cmds.memberCommandDenied(null, cmds.MEMBER_NEW_COMMANDS));
   const gate = readFileSync(new URL("../adapter/gate.ts", import.meta.url), "utf8");
-  assert.match(gate, /memberCommandDenied\(await req\.clone\(\)\.json\(\), allowed\)/);
+  assert.match(gate, /memberCommandDenied\(await req\.clone\(\)\.json\(\), allowed, /);
   assert.ok(!/"set_model"/.test(gate), "gate.ts keeps no private command list");
 });
 

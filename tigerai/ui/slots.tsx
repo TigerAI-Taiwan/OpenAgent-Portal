@@ -9,6 +9,7 @@ import { Component, type ReactNode } from "react";
 import { upstreamVisible, type SlotName } from "./layout";
 import { useMe, type MeState } from "./me";
 import { BellButton, BrandTitle, BrandVersion, FunctionsButton, NewButton, RoomListExtra, SidebarBottom, SignOutButton } from "./parts";
+import { IdleWatcher } from "./IdleWatcher";
 import { ComposerState } from "./ComposerState";
 import { SenderBridge, TruncationActions } from "./truncation";
 import { FallbackNote } from "./FallbackNote";
@@ -27,7 +28,7 @@ const REGISTRY: Record<SlotName, Render> = {
   "sidebar.new": (ctx) => <NewButton onNewChat={ctx.onNewChat as () => void} anchor={(ctx.anchor as string | null) ?? null} ready={ctx.ready === true} />,
   "sidebar.list.extra": (ctx) => <RoomListExtra anchor={(ctx.anchor as string | null) ?? null} />,
   "sidebar.bottom": (ctx) => <SidebarBottom openUpstream={ctx.openUpstream as (section: string) => void} />,
-  "toolbar.right": () => <><BellButton /><SignOutButton /></>,
+  "toolbar.right": () => <><IdleWatcher /><BellButton /><SignOutButton /></>,
   "toolbar.tabs": (_c, s, upstream) => (s.status === "on" && !upstreamVisible("toolbar.tabs", s.me) ? null : upstream),
   "onboarding.models": (_c, s) => (s.status === "on" && upstreamVisible("onboarding.models", s.me) ? undefined : null),
   "chat.truncation": (ctx, s) => <TruncationActions unanswered={ctx.unanswered === true} sessionId={(ctx.sessionId as string | undefined) ?? null} streaming={ctx.isStreaming === true} canCompact={ctx.canCompact === true} onCompact={ctx.onCompact as () => void} compacting={ctx.isCompacting === true} admin={s.me?.role === "admin"} />,

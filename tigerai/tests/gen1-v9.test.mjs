@@ -145,8 +145,8 @@ test("an HTTP body cannot choose the source", async () => {
 
 test("item 8: effective model limits = override, else gateway, else default (output capped at half the context)", async () => {
   const { effectiveLimits, defaultLimits } = await import("../provider/settings.ts");
-  assert.equal(defaultLimits().maxTokens, 32768, "v10: default raised from 16384");
-  assert.deepEqual(effectiveLimits({ contextWindow: 130048, maxTokens: null }), { contextWindow: 130048, maxTokens: 32768 }, "gateway context is used, no override needed");
+  assert.equal(defaultLimits().maxTokens, 40000, "default raised from 16384 to 32768 (v10) and 40000 (1.1.2)");
+  assert.deepEqual(effectiveLimits({ contextWindow: 130048, maxTokens: null }), { contextWindow: 130048, maxTokens: 40000 }, "gateway context is used, no override needed");
   assert.deepEqual(effectiveLimits({ contextWindow: 130048, maxTokens: null }, { contextWindow: 65536, maxTokens: 8000 }), { contextWindow: 65536, maxTokens: 8000 }, "override wins");
   assert.deepEqual(effectiveLimits({ contextWindow: 130048, maxTokens: 4000 }), { contextWindow: 130048, maxTokens: 4000 }, "a reported output size is kept");
   assert.deepEqual(effectiveLimits({ contextWindow: null, maxTokens: null }), { contextWindow: 32768, maxTokens: 16384 }, "gateway silent: 32768 context, half of it as output");
@@ -167,7 +167,7 @@ test("item 8: provisioning writes the effective limits into models.json", async 
   await provisionV1();
   srv.close();
   const m = Object.fromEntries(JSON.parse(readFileSync(join(process.env.PI_CODING_AGENT_DIR, "models.json"), "utf8")).providers.tigerai.models.map((x) => [x.id, x]));
-  assert.deepEqual([m.big.contextWindow, m.big.maxTokens], [130048, 32768]);
+  assert.deepEqual([m.big.contextWindow, m.big.maxTokens], [130048, 40000]);
   assert.deepEqual([m.quiet.contextWindow, m.quiet.maxTokens], [32768, 16384]);
   assert.deepEqual([m.tiny.contextWindow, m.tiny.maxTokens], [8192, 4096]);
   assert.deepEqual([m.set.contextWindow, m.set.maxTokens], [50000, 25000], "override wins for the field it sets, the rest follows the default");

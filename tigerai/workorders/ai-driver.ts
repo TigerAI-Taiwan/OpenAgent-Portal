@@ -5,6 +5,7 @@ import { writeAudit } from "../accounts/audit";
 import { registerOwner } from "../rooms/ownership";
 import { ensurePersonalDir } from "../workspace";
 import { forgetPendingRole, registerPendingRole } from "../agents/runtime";
+import { registerPendingOwner } from "../provider/personal-runtime";
 import { getRpcSession, startRpcSession } from "../../lib/rpc-manager";
 import { resolveSessionPath } from "../../lib/session-reader";
 import type { AiDriver, RunRequest, RunResult } from "./ai-run";
@@ -29,6 +30,8 @@ async function openSession(req: RunRequest): Promise<{ wrapper: Wrapper; session
   const dir = ensurePersonalDir(req.applicant.id);
   const tempKey = `__new__${randomUUID()}`;
   if (req.agent) registerPendingRole(tempKey, req.agent.id);
+  // The person's own AI work may use their own model connections (a channel's AI never does: rooms/ai.ts does not register an owner).
+  registerPendingOwner(tempKey, req.applicant.id);
   try {
     const { session, realSessionId } = await startRpcSession(tempKey, "", dir, req.agent?.model ? { initialModel: req.agent.model } : {});
     registerOwner(realSessionId, req.applicant.id, dir, "chat", null);

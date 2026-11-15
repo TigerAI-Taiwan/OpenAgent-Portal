@@ -5,6 +5,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { tr } from "../pages/i18n";
 import { DateField, Modal, Segmented, Select, api } from "./kit";
 import { enableAiPush } from "./push-client";
+import { useUi } from "./store";
 
 export const ASSIGNMENT_CREATED = "tg-assignment-created";
 
@@ -14,6 +15,10 @@ export default function NewAssignment({ onClose, prefill, onCreated }: { onClose
   const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
   const [roles, setRoles] = useState<{ id: string; name: string }[]>([]);
   const [f, setF] = useState({ title: prefill?.title ?? "", description: prefill?.description ?? "", assigneeId: prefill?.assigneeId ?? "", dueDate: prefill?.dueDate ?? "", link: false, kind: "user" as "user" | "ai", agentId: "general" });
+  // Opened while a channel is on screen: the AI may read that channel's recent messages (read-only). On by default, one click off.
+  const ui = useUi();
+  const room = ui.roomId ? ui.rooms.find((r) => r.id === ui.roomId && r.isMember !== false) ?? null : null;
+  const [withRoom, setWithRoom] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => { void api<{ menu: { id: string; name: string }[] }>("agents/menu").then((r) => { if (r.ok) setRoles(r.data.menu); }); }, []);
@@ -25,7 +30,7 @@ export default function NewAssignment({ onClose, prefill, onCreated }: { onClose
     // Asked here and only here: the click on 建立 is the gesture the browser needs, and this is the moment the person wants to be told.
     if (f.kind === "ai") void enableAiPush();
     const sessionId = f.link ? new URLSearchParams(window.location.search).get("session") ?? sessionStorage.getItem("tg-last-session") : null;
-    const r = await api<{ assignment?: { id?: string } }>("assignments", "POST", { title: f.title, description: f.description, ...(f.kind === "ai" ? { assigneeKind: "ai", agentId: f.agentId } : { assigneeId: f.assigneeId }), ...(f.dueDate ? { dueDate: f.dueDate } : {}), ...(sessionId && f.kind === "user" ? { sessionId } : {}) });
+    const r = await api<{ assignment?: { id?: string } }>("assignments", "POST", { title: f.title, description: f.description, ...(f.kind === "ai" ? { assigneeKind: "ai", agentId: f.agentId, ...(room && withRoom ? { roomId: room.id } : {}) } : { assigneeId: f.assigneeId }), ...(f.dueDate ? { dueDate: f.dueDate } : {}), ...(sessionId && f.kind === "user" ? { sessionId } : {}) });
     setBusy(false);
     if (!r.ok) { setError(r.data.error ?? tr("error")); return; }
     window.dispatchEvent(new Event(ASSIGNMENT_CREATED));
@@ -44,6 +49,7 @@ export default function NewAssignment({ onClose, prefill, onCreated }: { onClose
           : (<>
             <Select ariaLabel={tr("asPickRole")} value={f.agentId} options={[{ value: "general", label: tr("asGeneralAi") }, ...roles.map((r) => ({ value: r.id, label: r.name }))]} onChange={(v) => setF({ ...f, agentId: v })} />
             <div className="tgx-muted" style={{ fontSize: 12 }}>{tr("asAiHint")}</div>
+            {room && <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" data-testid="as-with-room" checked={withRoom} onChange={(e) => setWithRoom(e.target.checked)} />{tr("asReadRoom", { name: room.name })}</label>}
           </>)}
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>{tr("asDue")} <DateField ariaLabel={tr("asDue")} value={f.dueDate} onChange={(v) => setF({ ...f, dueDate: v })} /></div>
         {f.kind === "user" && <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={f.link} onChange={(e) => setF({ ...f, link: e.target.checked })} />{tr("asLinkSession")}</label>}

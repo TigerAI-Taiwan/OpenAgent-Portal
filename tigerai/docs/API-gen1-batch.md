@@ -173,3 +173,22 @@ POST `/api/push/subscribe` (upstream path) is answered by the gate and stored pe
   - `POST /test { url?, token? }` or `POST /:id/test { url?, token? }` → 200 `{ ok: true, tools: [{ name, description, readOnly }], ms, server }` or `{ ok: false, code: unreachable|unauthorized|timeout|bad_response|bad_url, error }`. With an id, the tool list is stored.
 - The old `/api/tg/admin/n8n/mcp[/:id]` routes call the same functions.
 - Audit: `mcp.connection.add|update|delete|test`, `mcp.tool_call` (`connector`, `template`, `tool`, `outcome` ok|error|denied).
+
+## CE-byok. Personal model connections (every signed-in person, for their own) — `/api/tg/personal-models`
+Settings `<data>/personal-models/<userId>/connections.json` (no key) and `key-<id>` (mode 600, directory 700). Connection id `tgp-<owner hash>-<random>`; it is also the pi provider id in that person's conversations. The caller is always the signed-in person: no route takes a user id.
+
+| Method / path | Result |
+|---|---|
+| GET `/personal-models` | `{ switches: { allow, publicWithoutKey }, max: 5, connections: [{ id, name, baseUrl, models: [], enabled, hasKey, keyLast4 }] }` |
+| POST `/personal-models` `{ name, baseUrl, models: "a, b" \| [..], apiKey?, enabled? }` | 201, same body as GET. 400 `bad_name`, `bad_url`, `bad_key`, `bad_models`, `bad_host`; 403 `personal_off`; 409 `personal_too_many` |
+| PATCH `/personal-models/:id` | any subset (`apiKey: null` removes the key). 404 for an id that is not the caller's |
+| DELETE `/personal-models/:id` | removes the connection and its key file |
+| POST `/personal-models/reorder` `{ ids }` | every id of the caller once, else 400 `bad_order` |
+| POST `/personal-models/test` `{ id?, baseUrl?, apiKey? }` | `{ ok, ms, models, ids }` (first 100 ids) or `{ ok: false, code, error }` (a status or network error, never the key) |
+| GET `/me` | gains `personalModels` (count of usable connections) |
+| GET `/model-list` (the gate rewrites `GET /api/models` here, only for people with a usable connection) | upstream's list; for an administrator plus `我的 · <name>` groups, for a member only their own groups; keys `provider:id` |
+
+Administrators (`/api/tg/admin/models/personal`): GET `{ switches, people: [{ userId, name, count }] }` (a count, never address/model/key); PUT `{ allow?, publicWithoutKey? }` → `{ switches }`.
+Gate (every role, `POST /api/agent/new` and `/api/agent/:id`): 403 `personal_forbidden` (a `tgp-` id that is not the caller's), 403 `personal_session` (send into another person's conversation whose owner has personal connections), 403 `personal_key_required` (member, own key required, none usable). Members may `set_model` / start with `provider`+`modelId` only for their own provider.
+Audit: `model.personal.add|update|delete` (`connection`, `name`, `changed`), `model.personal.switches` (`allow`, `publicWithoutKey`). Never the key, never the use.
+Env: `TIGERAI_PERSONAL_ALLOW_PRIVATE=1` (allow private/loopback addresses; 169.254 never).

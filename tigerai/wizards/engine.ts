@@ -7,12 +7,17 @@ import { aiSlotsFree, withAiSlot } from "../workorders/ai-run";
 import { clearSkillCache } from "./skill-cache";
 import { SCHEDULED, WIZARD_ZH, getSettings, requireManager, type Wizard } from "./settings";
 import { dueNow, dayKey, parseHm, weekKey } from "./time";
+import { collapseStops } from "./format";
 import { dedupeKey, getItem, getRun, insertItem, insertRun, isDuplicate, periodHandled, roomCards, runningRun, viewRun } from "./store";
+import { routeSupervision } from "./supervise-route";
+import { channelFileNode, writeChannelFile, writePersonItem, writePersonItems } from "./files";
+import { finishOrderOf, makeConfirmOrder } from "./confirm-order";
 import { writeSkill } from "./skill-writer";
 import { engineState, registerWizard, type WizardModel } from "./kind-store";
 import { daily } from "./kinds/daily";
 import { weekly } from "./kinds/weekly";
 import { skill } from "./kinds/skill";
+import { adhoc } from "./kinds/adhoc";
 import { WizardFailure, type Audience, type RunContext, type RunRow, type RunView, type WizardKind, type WizardResult } from "./types";
 
 /**
@@ -43,7 +48,7 @@ async function model(): Promise<WizardModel> {
 
 export { registerWizard };
 export function getWizard(id: string): WizardKind | undefined { return state().kinds.get(id); }
-for (const k of [daily, weekly, skill]) if (!state().kinds.has(k.id)) registerWizard(k);
+for (const k of [daily, weekly, skill, adhoc]) if (!state().kinds.has(k.id)) registerWizard(k);
 
 export const NOTE_RESTART = "伺服器重新啟動,這次整理中斷了";
 
@@ -57,7 +62,7 @@ const clean = (e: unknown): string => {
 
 export interface StartOptions {
   kind: string; roomId: string | null; runnerId: string;
-  requestedBy: string | null; trigger: "schedule" | "manual"; period?: string | null; params?: Record<string, unknown>;
+  requestedBy: string | null; trigger: RunRow["trigger"]; period?: string | null; params?: Record<string, unknown>;
 }
 export type Outcome = "queued" | "skipped" | "failed";
 
@@ -131,16 +136,19 @@ function post(roomId: string, runId: string, text: string): number {
 
 function complete(run: RunRow, result: WizardResult, fromSeq: number | null, toSeq: number | null): void {
   const day = dayKey(Date.now());
-  let delivered = 0; let duplicates = 0;
+  let delivered = 0; let duplicates = 0; let wasLive = false;
   inTransaction(() => {
     const live = getDb().prepare("UPDATE wizard_runs SET status='done', finished_at=?, from_seq=?, to_seq=?, draft=? WHERE id=? AND status='running'").run(Date.now(), fromSeq, toSeq, result.post?.text ?? null, run.id);
     if (live.changes === 0) return;
+    wasLive = true;
     for (const item of result.items) {
+      // 監督 about a named person: a 交辦單 for the head(s) of that person's own department(s) + a 提醒 for them (wizards/supervise-route.ts).
+      if (item.aspect === "supervise" && routeSupervision(run, item, day)) { delivered++; continue; }
       for (const to of recipients(item.to)) {
         const private_ = to !== null;
         const dedupe = private_ ? dedupeKey(item.aspect, to, item.sources) : null;
         if (dedupe && isDuplicate(dedupe)) { duplicates++; continue; }
-        insertItem({ runId: run.id, roomId: run.room_id, aspect: item.aspect, category: item.category ?? null, text: item.text, sources: item.sources, recipientId: to, extra: item.extra ?? null, dedupe, day });
+        insertItem({ runId: run.id, roomId: run.room_id, aspect: item.aspect, category: item.category ?? null, text: collapseStops(item.text), sources: item.sources, recipientId: to, extra: item.extra ?? null, dedupe, day });
         delivered++;
       }
     }
@@ -149,6 +157,12 @@ function complete(run: RunRow, result: WizardResult, fromSeq: number | null, toS
       getDb().prepare("UPDATE wizard_runs SET post_seq=?, confirm_state=? WHERE id=?").run(seq, result.post.confirmable ? "draft" : null, run.id);
     }
   });
+  if (wasLive) { // the same results as Markdown files in the directory (wizards/files.ts); never fails the run
+    const roomName = run.room_id ? getRoom(run.room_id)?.name ?? null : null;
+    const file = writeChannelFile(run, roomName ?? "", result);
+    if (result.post?.confirmable && run.room_id) { const room = getRoom(run.room_id); if (room) makeConfirmOrder(run, room, file ? channelFileNode(run, file) : null); }
+    writePersonItems(run, roomName, result);
+  }
   writeAudit("wizard.run", run.requested_by, { runId: run.id, kind: run.kind, roomId: run.room_id, trigger: run.trigger, outcome: "ok", items: delivered, duplicates, ...(result.note ?? {}) });
 }
 /** `null` = the channel / the administrators' queue (one row, no recipient); otherwise one private row per person. */
@@ -194,11 +208,33 @@ export function confirmRun(actor: Actor, runId: string): RunView {
   const res = getDb().prepare("UPDATE wizard_runs SET confirm_state='confirmed', confirmed_by=?, confirmed_at=? WHERE id=? AND confirm_state='draft'").run(actor.id, Date.now(), runId);
   if (res.changes === 0) throw new ServiceError("bad_state", "The state changed; reload", 409);
   writeAudit("wizard.confirm", actor.id, { runId, kind: run.kind, roomId: run.room_id });
+  finishOrderOf(runId, actor.id);
   return viewRun(getRun(runId)!);
 }
 
 export type Decision = "adopt" | "dismiss" | "ack";
-export function decideItem(actor: Actor, itemId: string, decision: Decision): { state: string; skill?: string } {
+/** What an administrator may change in a skill proposal before adopting it (the human-confirmation step): the words, never the folder name. */
+export interface SkillEdit { name?: unknown; when?: unknown; steps?: unknown }
+const SKILL_LIMITS = { name: 80, when: 300, step: 300, steps: 12 };
+function cleanSkillEdit(edit: SkillEdit, cur: { name: string; when: string; steps: string[] }): { name: string; when: string; steps: string[]; changed: boolean } {
+  const text = (v: unknown, field: string, max: number): string => {
+    const t = String(v ?? "").replace(/\s+/g, " ").trim();
+    if (!t) throw new ServiceError("bad_skill", `${field} cannot be empty`);
+    if (t.length > max) throw new ServiceError("bad_skill", `${field} is too long (max ${max} characters)`);
+    return t;
+  };
+  const name = edit.name === undefined ? cur.name : text(edit.name, "name", SKILL_LIMITS.name);
+  const when = edit.when === undefined ? cur.when : text(edit.when, "when", SKILL_LIMITS.when);
+  let steps = cur.steps;
+  if (edit.steps !== undefined) {
+    if (!Array.isArray(edit.steps)) throw new ServiceError("bad_skill", "steps must be a list");
+    steps = edit.steps.map((x) => String(x ?? "").replace(/\s+/g, " ").trim()).filter(Boolean);
+    if (steps.length === 0 || steps.length > SKILL_LIMITS.steps || steps.some((x) => x.length > SKILL_LIMITS.step)) throw new ServiceError("bad_skill", `1 to ${SKILL_LIMITS.steps} steps, each at most ${SKILL_LIMITS.step} characters`);
+  }
+  return { name, when, steps, changed: name !== cur.name || when !== cur.when || steps.join("\n") !== cur.steps.join("\n") };
+}
+
+export function decideItem(actor: Actor, itemId: string, decision: Decision, edit?: SkillEdit): { state: string; skill?: string } {
   const it = getItem(itemId);
   if (!it) throw new ServiceError("not_found", "No such item", 404);
   const now = Date.now();
@@ -213,10 +249,14 @@ export function decideItem(actor: Actor, itemId: string, decision: Decision): { 
     if (decision === "dismiss") { set("dismissed"); writeAudit("wizard.dismiss", actor.id, { itemId, aspect: "skill", roomId: it.room_id }); return { state: "dismissed" }; }
     if (decision !== "adopt") throw new ServiceError("bad_decision", "Choose 採用 or 不需要");
     const x = JSON.parse(it.extra ?? "{}") as { name: string; when: string; steps: string[]; slug: string; roomName?: string };
-    const written = writeSkill(x, userById(actor.id)?.name ?? actor.id, (JSON.parse(it.sources) as unknown[]).length);
+    // 1.1.2-ce: the administrator may correct the AI's wording first; what gets installed is what they saw and pressed 採用 on.
+    const edited = edit ? cleanSkillEdit(edit, x) : null;
+    const draft = edited ? { ...x, name: edited.name, when: edited.when, steps: edited.steps } : x;
+    const written = writeSkill(draft, userById(actor.id)?.name ?? actor.id, (JSON.parse(it.sources) as unknown[]).length);
     set("adopted");
+    if (edited?.changed) getDb().prepare("UPDATE wizard_items SET extra=? WHERE id=?").run(JSON.stringify({ ...x, name: edited.name, when: edited.when, steps: edited.steps, edited: true, aiName: x.name }), itemId);
     clearSkillCache();
-    writeAudit("skill.approve", actor.id, { itemId, skill: written.slug, roomId: it.room_id });
+    writeAudit("skill.approve", actor.id, { itemId, skill: written.slug, roomId: it.room_id, edited: edited?.changed === true });
     return { state: "adopted", skill: written.slug };
   }
   if (it.recipient_id !== null) {
@@ -324,6 +364,7 @@ export function deliverExternalItem(run: RunRow, i: { aspect: "remind" | "superv
   if (i.sources.length === 0) return false; // no source, no item
   const dedupe = dedupeKey(i.aspect, i.userId, i.sources) + `|${i.text.slice(0, 60)}`;
   if (isDuplicate(dedupe)) return false;
-  insertItem({ runId: run.id, roomId: run.room_id, aspect: i.aspect, category: null, text: i.text.slice(0, 1200), sources: i.sources, recipientId: i.userId, extra: null, dedupe, day: dayKey(Date.now()) });
+  insertItem({ runId: run.id, roomId: run.room_id, aspect: i.aspect, category: null, text: collapseStops(i.text).slice(0, 1200), sources: i.sources, recipientId: i.userId, extra: null, dedupe, day: dayKey(Date.now()) });
+  writePersonItem(i.userId, i.aspect, i.text, run.room_id ? getRoom(run.room_id)?.name ?? null : null);
   return true;
 }

@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: LicenseRef-TigerAI-SUL-Draft
 // 精靈 UI: the card a wizard leaves in a channel (確認 / 採用 / 不需要 / 重跑), the per-channel settings dialog, and the row a private result
 // takes in the 公佈欄 個人區. The server decides who may press what (tigerai/wizards/engine.ts); the buttons here only follow the flags it sent.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { fmtDateTime, tr, type Key } from "../pages/i18n";
-import { Dialog, Select, Switch, api } from "./kit";
+import { DateField, Dialog, Segmented, Select, Switch, api } from "./kit";
 import { openPanel, openRoomAt } from "./store";
 
 export type WSource = { t: "m" | "a" | "x"; seq?: number; id?: string; quote?: string; roomId: string | null; label: string };
@@ -18,6 +18,19 @@ export type WRun = {
 };
 
 const btn = { padding: "3px 12px", fontSize: 13 } as const;
+
+/** The program writes download links as `[PDF](/api/tg/slides/<id>?format=pdf)`; only that exact shape becomes a link, everything else stays text. */
+const DECK_LINK = /\[(PDF|PowerPoint)\]\((\/api\/tg\/slides\/[ru][0-9a-f]{12}-[0-9a-f]{12}\?format=(?:pdf|pptx))\)/g;
+export function LinkedText({ text }: { text: string }) {
+  const out: ReactNode[] = []; let at = 0;
+  for (const m of text.matchAll(DECK_LINK)) {
+    out.push(text.slice(at, m.index));
+    out.push(<a key={m.index} href={m[2]} download style={{ color: "var(--accent)" }}>{m[1]}</a>);
+    at = (m.index ?? 0) + m[0].length;
+  }
+  out.push(text.slice(at));
+  return <>{out}</>;
+}
 
 /** 出處: each chip opens the channel at that message (or the work order). */
 export function Sources({ sources, after }: { sources: WSource[]; after?: () => void }) {
@@ -87,7 +100,9 @@ export function WizardCard({ run, items, can, text, onChanged }: { run: WRun | u
             </ul>
           </div>))}
         {mine.length === 0 && <div className="tgx-muted" style={{ marginTop: 6 }}>{tr("wizNothing")}</div>}
-        {run.kind === "weekly" && <WeeklyTable text={text} />}
+        {(run.kind === "weekly" || run.kind === "adhoc") && <WeeklyTable text={text} />}
+        {(run.kind === "weekly" || run.kind === "adhoc") && /\/api\/tg\/slides\//.test(text) && (
+          <div data-tg-report style={{ marginTop: 10, fontSize: 13 }}><strong>{tr("wizReport")}:</strong> <LinkedText text={text.split("\n").filter((l) => l.includes("/api/tg/slides/")).join(" ").replace(/^\*\*[^*]+\*\*:/, "")} /></div>)}
         {run.confirmState === "draft" && can && (
           <div style={{ marginTop: 12 }}><button className="tgx-btn primary" style={btn} disabled={busy !== ""} onClick={() => act("confirm", `wizards/runs/${run.id}/confirm`)}>{tr("wizConfirm")}</button></div>)}
       </>)}
@@ -113,8 +128,8 @@ function WeeklyTable({ text }: { text: string }) {
 // ---------------------------------------------------------------- settings
 
 type Setting = { enabled: boolean; at: string; weekday: number | null };
-type Settings = { daily: Setting; weekly: Setting; skill: Setting; aspects: Record<string, boolean> };
-type Info = { settings: Settings; runs: WRun[]; kinds: string[]; tick?: { mode: "builtin" | "external"; lastRunAt: number | null; stale: boolean; anyEnabled: boolean } };
+type Settings = { daily: Setting; weekly: Setting; skill: Setting; aspects: Record<"daily" | "weekly", Record<string, boolean>> };
+type Info = { defaults?: Record<"daily" | "weekly", Record<string, boolean>>; settings: Settings; runs: WRun[]; kinds: string[]; tick?: { mode: "builtin" | "external"; lastRunAt: number | null; stale: boolean; anyEnabled: boolean } };
 const KINDS = ["daily", "weekly", "skill"] as const;
 const ASPECTS = ["record", "suggest", "supervise", "audit", "remind"] as const;
 
@@ -181,19 +196,25 @@ export function WizardSettings({ roomId, roomName, onClose }: { roomId: string; 
                 <input type="time" className="tgx-input" aria-label={`${tr(name)} ${tr("wizTime")}`} value={s.at} onChange={(e) => { if (e.target.value) void save({ [k]: { at: e.target.value } }); }} />
               </label>
             </div>
+            {(k === "daily" || k === "weekly") && (
+              <div data-aspects={k} style={{ marginTop: 10, borderTop: "1px solid var(--border)", paddingTop: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <strong style={{ fontSize: 13, flex: 1 }}>{tr("wizAspects")}</strong>
+                  <button type="button" className="tgx-btn" style={btn} data-reset={k} disabled={ASPECTS.every((a) => info.settings.aspects[k][a] === (info.defaults?.[k][a] ?? info.settings.aspects[k][a]))} onClick={() => void save({ reset: [k] })}>{tr("wizAspReset")}</button>
+                </div>
+                <div className="tgx-muted" style={{ fontSize: 12, margin: "2px 0 6px" }}>{tr(k === "daily" ? "wizAspectsHelpDaily" : "wizAspectsHelpWeekly")}</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {ASPECTS.map((a) => { const key = `wizAsp${a[0].toUpperCase()}${a.slice(1)}` as Key; const rec = info.defaults?.[k][a] === true; return (
+                    <div key={a} data-aspect={a} style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                      <Switch checked={info.settings.aspects[k][a] === true} label={`${tr(name)} ${tr(key)}`} onChange={(v) => void save({ aspects: { [k]: { [a]: v } } })} />
+                      <div style={{ flex: 1 }}>
+                        <div>{tr(key)}{rec && <span className="tgx-chip" data-recommended style={{ marginLeft: 8, padding: "0 6px", fontSize: 11 }}>{tr("wizAspRecommended")}</span>}</div>
+                        <div className="tgx-muted" style={{ fontSize: 12 }}>{tr(`${key}Desc` as Key)}</div>
+                      </div>
+                    </div>); })}
+                </div>
+              </div>)}
           </div>); })}
-        {info && (
-          <div className="tgx-card" style={{ margin: 0, maxWidth: "none" }}>
-            <strong>{tr("wizAspects")}</strong>
-            <div className="tgx-muted" style={{ fontSize: 12, margin: "2px 0 8px" }}>{tr("wizAspectsHelp")}</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {ASPECTS.map((a) => { const key = `wizAsp${a[0].toUpperCase()}${a.slice(1)}` as Key; return (
-                <div key={a} data-aspect={a} style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                  <Switch checked={info.settings.aspects[a] === true} label={tr(key)} onChange={(v) => void save({ aspects: { [a]: v } })} />
-                  <div><div>{tr(key)}</div><div className="tgx-muted" style={{ fontSize: 12 }}>{tr(`${key}Desc` as Key)}</div></div>
-                </div>); })}
-            </div>
-          </div>)}
         {tick && (
           <div data-tg-tick style={{ fontSize: 13, ...(tick.stale && tick.anyEnabled ? { color: "#d93025", fontWeight: 600 } : { color: "var(--text-muted)" }) }}>
             {tick.mode === "builtin"
@@ -205,7 +226,7 @@ export function WizardSettings({ roomId, roomName, onClose }: { roomId: string; 
             <strong style={{ fontSize: 13 }}>{tr("wizRecent")}</strong>
             {info.runs.length === 0 && <div className="tgx-muted" style={{ fontSize: 13 }}>{tr("wizNoRuns")}</div>}
             <ul style={{ margin: "4px 0 0", paddingLeft: 18, fontSize: 13 }}>
-              {info.runs.map((r) => <li key={r.id} data-run={r.id} data-status={r.status}>{fmtDateTime(r.createdAt)} · {r.kindZh} · {tr(`wizSt_${r.status}` as Key)} · {tr(`wizTrig_${r.trigger}` as Key)}{r.error ? ` · ${r.error}` : ""}</li>)}
+              {info.runs.map((r) => <li key={r.id} data-run={r.id} data-status={r.status}>{fmtDateTime(r.createdAt)} · {r.kindZh} · {tr(`wizSt_${r.status}` as Key)} · {tr(`wizTrig_${r.trigger.replace("-", "_")}` as Key)}{r.error ? ` · ${r.error}` : ""}</li>)}
             </ul>
           </div>)}
         {note && <div role="status" className="tgx-muted">{note}</div>}
@@ -223,9 +244,14 @@ export function WizardPersonal({ item, admin, onDone, after }: { item: WItem; ad
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState("");
+  const [editing, setEditing] = useState(false);
+  const xs = item.extra as { name?: string; when?: string; steps?: string[] } | null;
+  const [draft, setDraft] = useState({ name: xs?.name ?? "", when: xs?.when ?? "", steps: (xs?.steps ?? []).join("\n") });
   const decide = async (d: "ack" | "adopt" | "dismiss") => {
     setBusy(true);
-    const r = await api<{ state: string; skill?: string }>(`wizards/items/${item.id}/${d}`, "POST", {});
+    // After 編輯後採用 the administrator's own wording is what gets installed.
+    const edit = d === "adopt" && editing ? { edit: { name: draft.name, when: draft.when, steps: draft.steps.split("\n").map((s) => s.trim()).filter(Boolean) } } : {};
+    const r = await api<{ state: string; skill?: string }>(`wizards/items/${item.id}/${d}`, "POST", edit);
     setBusy(false);
     if (!r.ok) { setError(r.data.error ?? tr("error")); return; }
     if (d === "adopt" && r.data.skill) { setDone(tr("wizSkillAdoptedAs", { name: String(item.extra?.name ?? item.text) })); setTimeout(onDone, 1800); } else onDone();
@@ -235,21 +261,94 @@ export function WizardPersonal({ item, admin, onDone, after }: { item: WItem; ad
   return (
     <div data-tg-wizard-item data-aspect={item.aspect} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       <div className="tgx-muted" style={{ fontSize: 12 }}>{skill ? tr("bKindSkill") : `${tr("bKindWizard")} · ${item.aspectZh}`}{item.roomName ? ` · ${tr("wizFromRoom", { room: item.roomName })}` : ""}</div>
-      {skill && x ? (<>
+      {skill && x && editing ? (<div data-tg-skill-edit style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <label>{tr("wizSkillName")}<input className="tgx-input" style={{ width: "100%" }} data-testid="skill-edit-name" maxLength={80} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} /></label>
+        <label>{tr("wizSkillWhen")}<textarea className="tgx-input" style={{ width: "100%" }} rows={2} data-testid="skill-edit-when" maxLength={300} value={draft.when} onChange={(e) => setDraft({ ...draft, when: e.target.value })} /></label>
+        <label>{tr("wizSkillSteps")}<textarea className="tgx-input" style={{ width: "100%" }} rows={6} data-testid="skill-edit-steps" value={draft.steps} onChange={(e) => setDraft({ ...draft, steps: e.target.value })} /></label>
+        <div className="tgx-muted" style={{ fontSize: 12 }}>{tr("wizSkillEditHint")}</div>
+      </div>) : skill && x ? (<>
         <div><strong>{x.name}</strong></div>
         <div><span className="tgx-muted">{tr("wizSkillWhen")}:</span> {x.when}</div>
         <div><span className="tgx-muted">{tr("wizSkillSteps")}:</span><ol style={{ margin: "2px 0 0", paddingLeft: 20 }}>{(x.steps ?? []).map((s, i) => <li key={i}>{s}</li>)}</ol></div>
         <div className="tgx-muted" style={{ fontSize: 12 }}>{tr("wizSkillNote")}</div>
-      </>) : <div style={{ overflowWrap: "anywhere" }}>{item.text}</div>}
+      </>) : <div style={{ overflowWrap: "anywhere" }}><LinkedText text={item.text} /></div>}
       <Sources sources={item.sources} after={after} />
       {done ? <div role="status">{done}</div> : (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {skill && admin ? (<>
-            <button className="tgx-btn primary" style={btn} disabled={busy} onClick={() => decide("adopt")}>{tr("wizAdopt")}</button>
+            <button className="tgx-btn primary" style={btn} disabled={busy} data-testid="skill-adopt" onClick={() => decide("adopt")}>{editing ? tr("wizAdoptEdited") : tr("wizAdopt")}</button>
+            <button className="tgx-btn" style={btn} disabled={busy} data-testid="skill-edit" onClick={() => setEditing(!editing)}>{editing ? tr("wizSkillEditCancel") : tr("wizSkillEdit")}</button>
             <button className="tgx-btn" style={btn} disabled={busy} onClick={() => decide("dismiss")}>{tr("wizDismiss")}</button>
           </>) : !skill ? <button className="tgx-btn" style={btn} disabled={busy} onClick={() => decide("ack")}>{tr("wizAck")}</button> : null}
         </div>)}
       {error && <div className="tgx-err" role="alert">{error}</div>}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------- 訊息分析
+
+type RangeKey = "today" | "d3" | "week" | "custom";
+const ADHOC_DEFAULT = ["record", "suggest"];
+
+/** The 「訊息分析」 window: five aspects for this one run, a time range, optionally a slide report. The server decides who receives what. */
+export function AnalysisDialog({ roomId, manager, onClose, onStarted }: { roomId: string; manager: boolean; onClose: () => void; onStarted: () => void }) {
+  const [picked, setPicked] = useState<string[]>(ADHOC_DEFAULT);
+  const [range, setRange] = useState<RangeKey>("today");
+  const d0 = new Date(); const today = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, "0")}-${String(d0.getDate()).padStart(2, "0")}`;
+  const [from, setFrom] = useState(today);
+  const [to, setTo] = useState(today);
+  const [slides, setSlides] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [note, setNote] = useState("");
+  const toggle = (a: string, v: boolean) => setPicked((p) => (v ? [...new Set([...p, a])] : p.filter((x) => x !== a)));
+  const privateAsked = picked.includes("supervise") || picked.includes("audit");
+  const run = async () => {
+    setBusy(true); setError(""); setNote("");
+    const spec = range === "today" ? { type: "today" } : range === "d3" ? { type: "days", n: 3 } : range === "week" ? { type: "week" } : { type: "custom", from, to };
+    const r = await api<{ outcome: string; run: WRun }>(`wizards/rooms/${roomId}/adhoc`, "POST", { aspects: ASPECTS.filter((a) => picked.includes(a)), range: spec, slides });
+    setBusy(false);
+    if (!r.ok) { setError(r.data.error ?? tr("error")); return; }
+    if (r.data.outcome === "skipped") { setNote(`${tr("wizSt_skipped")}:${r.data.run.error ?? ""}`); return; }
+    setNote(tr("wizAnalysisStarted")); onStarted(); setTimeout(onClose, 1500);
+  };
+  return (
+    <Dialog title={tr("wizAnalysisTitle")} onClose={onClose} size="md">
+      <div data-tg-analysis style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div className="tgx-muted" style={{ fontSize: 13 }}>{tr("wizAnalysisIntro")}</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <strong style={{ fontSize: 13 }}>{tr("wizAspects")}</strong>
+          {ASPECTS.map((a) => { const key = `wizAsp${a[0].toUpperCase()}${a.slice(1)}` as Key; return (
+            <div key={a} data-aspect={a} style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <Switch checked={picked.includes(a)} label={tr(key)} onChange={(v) => toggle(a, v)} />
+              <div><div>{tr(key)}</div><div className="tgx-muted" style={{ fontSize: 12 }}>{tr(`${key}Desc` as Key)}</div></div>
+            </div>); })}
+        </div>
+        {privateAsked && <div data-tg-private-note role="note" className="tgx-card" style={{ margin: 0, maxWidth: "none", fontSize: 13 }}>{tr(manager ? "wizAnalysisPrivateManager" : "wizAnalysisPrivateMember")}</div>}
+        <div>
+          <strong style={{ fontSize: 13 }}>{tr("wizAnalysisRange")}</strong>
+          <div style={{ marginTop: 4, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <Segmented ariaLabel={tr("wizAnalysisRange")} value={range} onChange={(v) => setRange(v as RangeKey)}
+              options={[{ value: "today", label: tr("wizRangeToday") }, { value: "d3", label: tr("wizRange3") }, { value: "week", label: tr("wizRangeWeek") }, { value: "custom", label: tr("wizRangeCustom") }]} />
+            {range === "custom" && (<>
+              <DateField ariaLabel={tr("wizRangeFrom")} value={from} onChange={setFrom} />
+              <span className="tgx-muted">~</span>
+              <DateField ariaLabel={tr("wizRangeTo")} value={to} onChange={setTo} />
+            </>)}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <Switch checked={slides} label={tr("wizAnalysisSlides")} onChange={setSlides} />
+          <div><div>{tr("wizAnalysisSlides")}</div><div className="tgx-muted" style={{ fontSize: 12 }}>{tr("wizAnalysisSlidesHelp")}</div></div>
+        </div>
+        {note && <div role="status" className="tgx-muted">{note}</div>}
+        {error && <div className="tgx-err" role="alert">{error}</div>}
+        <div className="tgx-actions">
+          <button className="tgx-btn" onClick={onClose}>{tr("close")}</button>
+          <button className="tgx-btn primary" disabled={busy || picked.length === 0} onClick={() => void run()}>{busy ? tr("wizRunning") : tr("wizAnalysisRun")}</button>
+        </div>
+      </div>
+    </Dialog>
   );
 }

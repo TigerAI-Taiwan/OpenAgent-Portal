@@ -19,12 +19,14 @@ export const zhN8nWebhook = {
   fnN8nHint: "用『{name}』:",
   fnN8nEmpty: "你的部門還沒開放 n8n 應用,請找管理員。",
   whUrl: "Webhook 網址",
+  whMethod: "HTTP 方法", whMethodHint: "照 n8n 流程裡 Webhook 節點的設定(n8n 預設是 GET);選錯時系統會依 n8n 的回應自動改正一次。",
   headerStored: "標頭已儲存",
   revoked: "已撤銷",
   n8nDisplay: "顯示名稱(中文,例如 查月營收)",
   cfDelWebhook: "確定要刪除 Webhook「{name}」嗎?AI 將不能再呼叫它。",
   cfRevokeKey: "確定要撤銷金鑰「{name}」嗎?使用它的 n8n 流程會立刻失效。",
   tabN8nConn: "n8n 連線",
+  bKindN8nWrite: "n8n 修改申請",
   skN8nHint: "你的部門可以請 AI 呼叫這些 n8n 流程。",
 };
 export const enN8nWebhook: Partial<Record<keyof typeof zhN8nWebhook, string>> = {
@@ -33,6 +35,7 @@ export const enN8nWebhook: Partial<Record<keyof typeof zhN8nWebhook, string>> = 
   n8nWebhooks: "Webhooks the AI can call",
   n8nWebhookHelp: "Register an n8n webhook. In the description tell the AI what input it takes, for example: send {\\\"co_id\\\": \\\"<stock code>\\\"}; returns last month's revenue.",
   n8nName: "Id (lowercase, - and _; used when the AI calls it)",
+  whMethod: "HTTP method", whMethodHint: "As set on the workflow's Webhook node (n8n defaults to GET); a wrong choice is corrected once from n8n's own answer.",
   n8nHeader: "Secret header, e.g. X-Key: value (optional, stored privately)",
   n8nInputHelp: "What it does and what input it takes (the AI reads this)",
   n8nInbound: "Keys for n8n to call the Portal",
@@ -42,4 +45,5 @@ export const enN8nWebhook: Partial<Record<keyof typeof zhN8nWebhook, string>> = 
   n8nKeyOnce: "Copy this key now. It is shown only once.",
   n8nRevoke: "Revoke",
   tabN8nConn: "n8n connection",
+  bKindN8nWrite: "n8n change request",
 };

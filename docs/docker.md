@@ -1,6 +1,6 @@
 # Running Pi Web in Docker
 
-This project ships a production image and a Compose example. The image runs as the unprivileged `node` user, listens on port `30141` inside the container, and includes `bash` and `git` for Pi Web's terminal, shell, and Git features. The application itself does not require a Docker-specific environment variable to start; the image supplies its container bind address and port. The Compose example requires a password so the high-privilege UI is not accidentally exposed without authentication.
+This project ships a production image and a Compose example. The image runs as the unprivileged `node` user, listens on port `30161` inside the container, and includes `bash` and `git` for Pi Web's terminal, shell, and Git features. The application itself does not require a Docker-specific environment variable to start; the image supplies its container bind address and port. The Compose example requires a password so the high-privilege UI is not accidentally exposed without authentication.
 
 ## Start with Compose
 
@@ -11,7 +11,7 @@ mkdir -p workspace
 docker compose up --build -d
 ```
 
-Open <http://localhost:30141>. The published port is bound to host loopback only. To use another local port, set `PI_WEB_PORT` in `.env`; the application still listens on `30141` inside the container.
+Open <http://localhost:30161>. The published port is bound to host loopback only. To use another local port, set `PI_WEB_PORT` in `.env`; the application still listens on `30161` inside the container.
 
 The equivalent Podman command is `podman compose up --build -d` when the Compose provider is installed. To build without Compose, run `podman build -t pi-web .`.
 
@@ -60,7 +60,7 @@ The Compose file explicitly sets the following:
 
 | Variable | Container value / requirement | Purpose |
 | --- | --- | --- |
-| `PORT` | `30141` | Internal HTTP port. Keep the Compose container port in sync if you change it. |
+| `PORT` | `30161` | Internal HTTP port. Keep the Compose container port in sync if you change it. |
 | `PI_WEB_HOSTNAME` | `0.0.0.0` | Required for access through the container network; Pi Web's normal non-container default is loopback-only. |
 | `PI_WEB_NO_OPEN` | `1` | Prevents attempts to open a browser in the container. |
 | `PI_CODING_AGENT_DIR` | `/home/node/.pi/agent` | Explicitly points Pi and Pi Web at the persistent agent mount; normally this defaults to `$HOME/.pi/agent`. |

@@ -43,7 +43,7 @@ export const UPSTREAM_VISIBLE_TO: Record<string, RoleTag[]> = {
 };
 
 /** Shown only to administrators (設定 › 帳號 › 關於). No member sees a version number anywhere. */
-export const PRODUCT_VERSION = "1.0.0-ce";
+export const PRODUCT_VERSION = "1.1.0-ce";
 
 /** What the product-name popup lists. Only e-mail for now; the other contact details are still to be given by the owner. `value` is shown verbatim, `href` makes it a link. */
 export const CONTACT: { id: string; labelKey: string; value: string; href?: string }[] = [
@@ -75,12 +75,18 @@ export const NEW_MENU: Item[] = [
 /** 設定 = environment and parameters. Everyone: 帳號. Administrators add the 管理 group. */
 export const SETTINGS_TABS: Item[] = [
   { id: "account",     icon: "user",   labelKey: "tabAccount",     roles: ["admin", "head", "member"], action: { kind: "settings", tab: "account" } },
+  { id: "dir",         icon: "folder", labelKey: "dirTab",       roles: ["admin", "head", "member"], action: { kind: "settings", tab: "dir" } },
   { id: "models",      icon: "cpu",    labelKey: "tabModelConn",   roles: ["admin"], group: "admin", action: { kind: "settings", tab: "models" } },
   { id: "n8n",         icon: "flow",   labelKey: "tabN8nConn",     roles: ["admin"], group: "admin", action: { kind: "settings", tab: "n8n" } },
+  { id: "web",         icon: "globe",  labelKey: "tabWeb",         roles: ["admin"], group: "admin", action: { kind: "settings", tab: "web" } },
+  { id: "connectors",  icon: "plug",   labelKey: "tabConnectors",  roles: ["admin"], group: "admin", action: { kind: "settings", tab: "connectors" } },
+  { id: "forms",       icon: "list",   labelKey: "tabForms",       roles: ["head"], group: "admin", action: { kind: "settings", tab: "forms" } },
   { id: "plugins",     icon: "plug",   labelKey: "tabPlugins",     roles: ["admin"], group: "admin", action: { kind: "embed", id: "plugins" } },
   { id: "users",       icon: "users",  labelKey: "users",          roles: ["admin"], group: "admin", action: { kind: "settings", tab: "users" } },
   { id: "groups",      icon: "users",  labelKey: "groups",         roles: ["admin"], group: "admin", action: { kind: "settings", tab: "groups" } },
   { id: "org",         icon: "org",    labelKey: "org",            roles: ["admin"], group: "admin", action: { kind: "settings", tab: "org" } },
+  { id: "userlog",     icon: "users",  labelKey: "ulTab",          roles: ["head"], group: "admin", action: { kind: "settings", tab: "userlog" } },
+  { id: "system",      icon: "info",   labelKey: "sysTab",         roles: ["admin"], group: "admin", action: { kind: "settings", tab: "system" } },
   { id: "audit",       icon: "list",   labelKey: "audit",          roles: ["admin"], group: "admin", action: { kind: "settings", tab: "audit" } },
   { id: "deleted",     icon: "trash",  labelKey: "tabDeleted",     roles: ["admin"], group: "admin", action: { kind: "settings", tab: "deleted" } },
   { id: "addon",       icon: "layers", labelKey: "tabAddon",       roles: ["admin"], group: "admin", action: { kind: "settings", tab: "addon" } },
@@ -92,6 +98,7 @@ export const SKILL_TABS: Item[] = [
   { id: "roles",     icon: "robot",    labelKey: "tabRolesUse",     roles: ["admin", "head", "member"], action: { kind: "panel", id: "skills" } },
   { id: "n8napps",   icon: "flow",     labelKey: "fnN8n",           roles: ["admin", "head", "member"], action: { kind: "panel", id: "skills" } },
   { id: "available", icon: "layers",   labelKey: "tabAvailSkills",  roles: ["admin", "head", "member"], action: { kind: "panel", id: "skills" } },
+  { id: "deptRoles", icon: "robot",    labelKey: "tabDeptRoles",    roles: ["head"], action: { kind: "panel", id: "skills" } },
   { id: "install",   icon: "layers",   labelKey: "tabInstallSkills", roles: ["admin"], group: "admin", action: { kind: "embed", id: "skills" } },
   { id: "roleAdmin", icon: "robot",    labelKey: "tabRolesAdmin",        roles: ["admin"], group: "admin", action: { kind: "panel", id: "skills" } },
   { id: "library",   icon: "prompt",   labelKey: "tabPromptLibrary", roles: ["admin"], group: "admin", action: { kind: "panel", id: "skills" } },
@@ -117,9 +124,14 @@ export function visibleItems(items: Item[], me: { role: string; isHead?: boolean
   return items.filter((i) => i.roles.some((r) => mine.includes(r)));
 }
 /** Whether an upstream element is kept for this person. Unknown people (not loaded yet) never keep a restricted element. */
-export function upstreamVisible(name: string, me: { role: string; isHead?: boolean } | null | undefined): boolean {
+export function upstreamVisible(name: string, me: { role: string; isHead?: boolean; personalModels?: number } | null | undefined): boolean {
   const allowed = UPSTREAM_VISIBLE_TO[name];
   if (!allowed) return true;
+  // A member with a model connection of their own gets the model picker (the list then holds only their 「我的」 group; the server decides what they may pick).
+  if (name === "composer.model" && (me?.personalModels ?? 0) > 0) return true;
   const mine = rolesOf(me);
   return allowed.some((r) => mine.includes(r));
 }
+
+/** The tabs the TigerAI maintenance account may open (the server's allow-list is the real fence: accounts/vendor-policy.ts). */
+export const VENDOR_TABS: ReadonlySet<string> = new Set(["account", "models", "n8n", "web", "connectors", "system"]);

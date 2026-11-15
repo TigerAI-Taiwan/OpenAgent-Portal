@@ -11,6 +11,11 @@ const STUBS = new Map([
 
 export async function resolve(specifier, context, next) {
   if (specifier === "next/server") return next("next/server.js", context);
+  if (specifier.startsWith("@/")) {
+    // the app's "@/" alias (tsconfig paths): the repository root
+    const base = pathResolve(dirname(fileURLToPath(import.meta.url)), "../..", specifier.slice(2));
+    for (const ext of ["", ".ts", "/index.ts"]) if (/\.[a-z]+$/.test(base + ext) && existsSync(base + ext)) return next(pathToFileURL(base + ext).href, context);
+  }
   if (specifier.startsWith(".") && context.parentURL?.startsWith("file:")) {
     const base = pathResolve(dirname(fileURLToPath(context.parentURL)), specifier);
     for (const [key, stub] of STUBS) {

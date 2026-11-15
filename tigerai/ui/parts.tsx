@@ -56,6 +56,7 @@ export function BrandTitle() {
                 <span className="tgx-muted" style={{ minWidth: 64 }}>{tr(c.labelKey as Key)}</span>
                 {c.href ? <a href={c.href} style={{ color: "var(--accent)", overflowWrap: "anywhere" }}>{c.value}</a> : <span>{c.value}</span>}
               </div>))}
+            <div data-tg-support style={{ userSelect: "text", marginTop: 4 }}>{tr("supportLine")}</div>
           </div>
         </Dialog>)}
     </>
@@ -76,7 +77,7 @@ export function NewButton({ onNewChat, anchor, ready }: { onNewChat: () => void;
   const run = (item: Item) => {
     setOpen(false);
     if (item.action.kind !== "command") return;
-    if (item.action.id === "new-chat") { setPickedRole(null); clearRoomOnly(); closeRoom(); onNewChat(); }
+    if (item.action.id === "new-chat") { setPickedRole(null); clearRoomOnly(); closeRoom(); void api("personal-models/pick", "DELETE").finally(onNewChat); } // a plain new conversation goes back to the default model
     else if (item.action.id === "new-room") setDialog(true);
     else if (item.action.id === "new-assignment") setOrder(true);
     else if (item.action.id === "new-announcement") openBulletin("public", { compose: true });

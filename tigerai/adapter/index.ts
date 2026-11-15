@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { tgEnabled } from "../config";
 import { gate, UID_HEADER } from "./gate";
 import { bootstrapAdmin, userById, type Role } from "../accounts/service";
+import { bootstrapVendor } from "../accounts/vendor";
 import { getDb } from "../db/store";
 import { canAccessSession, filterAccessible, getOwner, registerOwner, roomBoundIds, sessionIsRestricted } from "../rooms/ownership";
 import { ensurePersonalDir, isRestrictedCwd, memberCwdAllowed, memberRoots, isInside } from "../workspace";
@@ -13,18 +14,28 @@ import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 import { ROOM_SESSION_MESSAGE, roomCommandRefused } from "../rooms/room-guard";
 import { provisionV1 } from "../provider/v1";
 import { createFallbackExtension } from "../provider/fallback-runtime";
+import { createLoopGuardExtension } from "../agents/loop-guard";
+import { guardCatalogs, personalOwnerFor, personalExtensionsFor, registerPendingOwner } from "../provider/personal-runtime";
+import { lastPick } from "../provider/personal";
 import { createCompletionPushExtension } from "../push/extension";
 import { dropOwnerlessUpstreamSubscriptions } from "../push";
 import { workspaceLabels } from "./labels";
 import { createPathGuard } from "./path-guard";
+import { managedRoot } from "../knowledge/store";
 import { createPromptLibraryExtension } from "./prompt-library";
 import { addonSessionExtensions } from "../addons/registry";
 import { createN8nExtension } from "../n8n/extension";
+import { createWebExtension } from "../web/extension";
+import { createSlidesExtension } from "../slides/extension";
+import { createMcpExtension } from "../n8nmcp/extension";
+import { createFormsExtension } from "../forms/extension";
 import { startScheduler } from "../wizards/scheduler";
 import { createRoleExtension, forgetPendingRole, registerPendingRole, roleForSession } from "../agents/runtime";
 import { startable } from "../agents/personal";
 import { getAgent } from "../agents/service";
 import { writeAudit } from "../accounts/audit";
+import { installBuiltinSkills } from "../skills/builtin";
+import { skillsDir } from "../wizards/skill-writer";
 import { sweepInterruptedRuns } from "../workorders/ai-run";
 
 /**
@@ -42,12 +53,16 @@ let initialised = false;
 export async function init(): Promise<void> {
   if (!tgEnabled() || initialised) return;
   try {
+    guardCatalogs(); // keeps personal providers out of upstream's process-wide model catalog (only when the module is on)
     getDb();
     bootstrapAdmin();
+    bootstrapVendor();
     // Upstream's broadcast "session complete" list has no owners; it is emptied so only our owner-bound pushes remain.
     try { const n = dropOwnerlessUpstreamSubscriptions((await import("../../lib/session-reader")).getAgentDir()); if (n) console.log(`[tigerai] dropped ${n} ownerless push subscription(s)`); } catch { /* best effort */ }
     // AI orders that were 進行中 when the server stopped are handed back as 待確認 (no automatic restart).
     try { sweepInterruptedRuns(); } catch (e) { console.error("[tigerai] sweep of interrupted AI orders failed:", e instanceof Error ? e.message : e); }
+    // 內建技能 are rewritten at every start (the originals stay as shipped); people's copies live elsewhere and are never touched.
+    try { installBuiltinSkills(); } catch (e) { console.error("[tigerai] built-in skills failed:", e instanceof Error ? e.message : e); }
     // The one model source. A failure here must not stop the portal (the admin page shows the error).
     await provisionV1().catch((e) => console.error("[tigerai] model provisioning failed:", e instanceof Error ? e.message : e));
     // The Portal's own wizard schedule (community edition); an add-on's external scheduler makes it stand down.
@@ -186,15 +201,22 @@ export const ROLE_HEADER = "x-agent-role";
  */
 export async function pendingRoleFor(req: Request, tempKey: string): Promise<Response | { initialModel?: { provider: string; modelId: string } } | undefined> {
   if (!tgEnabled()) return undefined;
+  // Whoever starts a conversation over HTTP is its owner from the first moment: their personal model connections (if any) are
+  // registered into this conversation only. The temporary key is all startExtensions sees for a brand-new conversation.
+  try { const owner = identityOf(req); if (owner) registerPendingOwner(tempKey, owner.userId); } catch { /* no personal connections then */ }
   const wanted = req.headers.get(ROLE_HEADER);
-  if (!wanted) return undefined;
+  // The person's chosen personal model sticks: a role or an app (a fresh composer) must not drop them back to the public default.
+  // Only an explicit model of the role itself replaces it. (The pick is recorded by the gate from the request that named it.)
+  let kept: { initialModel: { provider: string; modelId: string } } | undefined;
+  try { const w = identityOf(req); const pick = w ? lastPick(w.userId) : null; if (pick) kept = { initialModel: pick }; } catch { /* no kept pick */ }
+  if (!wanted) return kept;
   try {
     const who = identityOf(req);
     const role = who && startable({ id: who.userId, role: who.role }, wanted) ? getAgent(wanted) : undefined;
     if (!who || !role) return deny(403, "That AI role is not available to you");
     registerPendingRole(tempKey, role.id);
     setTimeout(() => forgetPendingRole(tempKey), 10 * 60_000).unref?.();
-    return role.model ? { initialModel: role.model } : {};
+    return role.model ? { initialModel: role.model } : kept ?? {};
   } catch (error) {
     console.error("[tigerai] pendingRoleFor:", error);
     return deny(403, "That AI role is not available to you");
@@ -234,7 +256,7 @@ export async function onSessionForked(req: Request, parentId: string, newId: str
 /** Tools a member's session never gets. Fail-closed: unknown owner means restricted. */
 const MEMBER_DENIED_TOOLS = [
   "bash", "edit", "write", "powershell", "codemode", "Agent", "get_subagent_result", "steer_subagent",
-  "web_*", "exec*",
+  "exec*", // web_search / web_fetch are ours (web/extension.ts) and gated per call by 上網查資料's switch and groups, so "web_*" no longer blanket-denies them
 ];
 
 export function toolExcludes(sessionId: string, cwd?: string): string[] {
@@ -254,20 +276,37 @@ export function startExtensions(ctx: { sessionId: string; cwd: string }): Inline
   if (!tgEnabled()) return [];
   const library = createPromptLibraryExtension(ctx.cwd);
   const n8n = createN8nExtension();
+  // 上網查資料 (web_search / web_fetch) and make_slides: registered everywhere, allowed per call (web/settings.ts mayUseWeb; slides/extension.ts).
+  const web = createWebExtension();
+  const slides = createSlidesExtension();
+  const mcp = createMcpExtension();
+  const forms = createFormsExtension();
   const addons = addonSessionExtensions(ctx);
   const role = roleForSession(ctx.sessionId);
   // Connection fallback: when the primary model connection does not answer, the same turn goes on with the next one (provider/fallback-runtime.ts).
-  const fallback = createFallbackExtension({ sessionId: ctx.sessionId });
+  // Personal model connections of the person who owns this conversation (none for rooms, automations, other people): provider/personal-runtime.ts.
+  const personal = personalExtensionsFor(ctx.sessionId, ctx.cwd);
+  const fallback = createFallbackExtension({ sessionId: ctx.sessionId, owner: personalOwnerFor(ctx.sessionId, ctx.cwd) });
   const completion = createCompletionPushExtension();
+  // Stops a run stuck in empty / failing tool calls (agents/loop-guard.ts).
+  const loopGuard = createLoopGuardExtension({ sessionId: ctx.sessionId, actorId: personalOwnerFor(ctx.sessionId, ctx.cwd)?.id ?? null });
   // An administrator's conversation started from a role still wears the role.
-  if (toolExcludes(ctx.sessionId, ctx.cwd).length === 0) return [library, n8n, ...addons, fallback, completion, ...(role ? [createRoleExtension(role)] : [])];
+  if (toolExcludes(ctx.sessionId, ctx.cwd).length === 0) return [library, n8n, web, slides, mcp, forms, ...addons, ...personal, fallback, loopGuard, completion, ...(role ? [createRoleExtension(role)] : [])];
   return [
     library,
     n8n,
+    web,
+    slides,
+    mcp,
+    forms,
     ...addons,
+    ...personal,
     fallback,
+    loopGuard,
     completion,
-    createPathGuard(ctx.cwd, role?.knowledge_dir ? [role.knowledge_dir] : []),
+    // The company's skills (built-in and the ones an administrator adopted) are read-only text the AI must be able to open: the SDK lists a skill by
+    // its path and the model loads the steps with `read`. Without this root a member's AI answered 「技能檔位於工作區外」 and guessed the steps (SME run, unit 4).
+    createPathGuard(ctx.cwd, [skillsDir(), ...(role?.knowledge_dir ? [role.knowledge_dir] : []), ...(role && managedRoot(role) ? [managedRoot(role)!] : [])]),
     ...(role ? [createRoleExtension(role)] : []),
   ];
 }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LicenseRef-TigerAI-SUL-Draft
 import { FALLBACK_ENTRY_TYPE, noticeText, type FallbackRecord } from "./fallback-logic";
 import { listConnections } from "./settings";
+import { isPersonalProvider } from "./personal";
 
 /**
  * The one small line under a conversation: "主要連線沒有回應,這次改用「…」的 …". It is read from the conversation's own log, so it
@@ -18,7 +19,8 @@ export function noteFromEntries(entries: readonly unknown[]): { text: string; ki
   // A record written before the turn's own user message (the pre-send step-off) still belongs to that turn: it comes after the previous answer.
   if (!r || lastRec <= assistantBefore || !r.from || !r.kind || r.kind === "restore") return null;
   const list = listConnections();
-  const nameOf = (p: string) => list.find((c) => c.id === p)?.name ?? p;
+  // A personal connection is named only by what it is: the line is visible to whoever may open the conversation.
+  const nameOf = (p: string) => isPersonalProvider(p) ? "我的連線" : list.find((c) => c.id === p)?.name ?? p;
   return { kind: r.kind, text: noticeText({ kind: r.kind, from: r.from, to: r.to ?? null }, nameOf, list.find((c) => c.enabled)?.id ?? list[0]?.id ?? null) };
 }
 
