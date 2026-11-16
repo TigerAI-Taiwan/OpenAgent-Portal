@@ -1,5 +1,6 @@
 // Adapted from @Nuctori's script-style CI/E2E fixtures in PR #617 (issue #599).
 import assert from "node:assert/strict";
+import { isForkProbe404 } from "./fork-console.mjs";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { appendFileSync, createWriteStream, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -258,7 +259,7 @@ try {
     const errors = [];
     const olderResponses = [];
     page.on("pageerror", (error) => errors.push(error.message));
-    page.on("console", (event) => { if (event.type() === "error") errors.push(event.text()); });
+    page.on("console", (event) => { if (event.type() === "error" && !isForkProbe404(event)) errors.push(event.text()); });
     page.on("response", (response) => {
       if (response.url().startsWith(base) && response.status() >= 500) errors.push(`${response.status()} ${response.url()}`);
       const url = new URL(response.url());

@@ -40,7 +40,7 @@ export async function checkFontPreferences(page) {
   for (const selector of [".markdown-code-block code", "#settings-font-mono"]) {
     assert.match(await font(selector), /^monospace,/, selector);
   }
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "load" });
   await page.locator(".markdown-code-block code").waitFor();
   assert.match(await font("body"), /^"?Times New Roman"?, serif,/);
   assert.match(await font(".markdown-code-block code"), /^monospace,/);
@@ -54,7 +54,7 @@ export async function checkFontPreferences(page) {
 
   const other = await page.context().newPage();
   try {
-    await other.goto(page.url(), { waitUntil: "networkidle" });
+    await other.goto(page.url(), { waitUntil: "load" });
     await ui.fill("serif");
     await other.waitForFunction(() => getComputedStyle(document.body).fontFamily.startsWith("serif,"));
     await uiWeight.fill("300");
@@ -85,11 +85,28 @@ export async function checkFontPreferences(page) {
   await openSettings();
   await ui.fill("serif");
   const serifHeight = await textarea.evaluate((el) => el.clientHeight);
+  // The height only has to change when the two families wrap the draft into a
+  // different number of lines. Minimal CI images (the Playwright container has
+  // only WenQuanYi) can give serif and monospace different advances that still
+  // wrap to the same count, so a changed height cannot be demanded there; the
+  // fit invariant below is checked either way.
+  const linesFor = (family) => textarea.evaluate((el, f) => {
+    const probe = document.createElement("span");
+    probe.style.cssText = `position:absolute;visibility:hidden;white-space:pre;font-size:${getComputedStyle(el).fontSize};font-family:${f}`;
+    probe.textContent = "iiii llll mmmm wwww sample text ".repeat(12);
+    document.body.appendChild(probe);
+    const width = probe.getBoundingClientRect().width;
+    probe.remove();
+    const cs = getComputedStyle(el);
+    const avail = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    return Math.ceil(width / avail);
+  }, family);
+  const metricsDiffer = (await linesFor("serif")) !== (await linesFor("monospace"));
   await ui.fill("monospace");
-  await page.waitForFunction((oldHeight) => {
+  await page.waitForFunction(({ oldHeight, mustChange }) => {
     const input = document.querySelector(".chat-input-textarea");
-    return input.clientHeight !== oldHeight && (input.scrollHeight <= input.clientHeight + 1 || input.clientHeight >= 199);
-  }, serifHeight);
+    return (!mustChange || input.clientHeight !== oldHeight) && (input.scrollHeight <= input.clientHeight + 1 || input.clientHeight >= 199);
+  }, { oldHeight: serifHeight, mustChange: metricsDiffer });
   await resetUi.click();
 
   assert.deepEqual(await page.evaluate(() => ({

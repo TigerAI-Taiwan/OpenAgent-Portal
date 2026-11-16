@@ -3,6 +3,7 @@
 // Enter keeps selecting it in this tab. Desktop Chromium; one browser context,
 // so the tabs share localStorage (workspace memory) as real tabs do.
 import assert from "node:assert/strict";
+import { isForkProbe404 } from "./fork-console.mjs";
 import { join } from "node:path";
 
 const FORBIDDEN_COMMANDS = new Set(["prompt", "steer", "follow_up", "fork", "fork_branch", "clone", "new_session"]);
@@ -13,7 +14,7 @@ export async function checkSessionNavigation({ browser, base, artifacts, a, b, a
   const errors = [];
   const watch = (target) => {
     target.on("pageerror", (error) => errors.push(error.message));
-    target.on("console", (event) => { if (event.type() === "error") errors.push(event.text()); });
+    target.on("console", (event) => { if (event.type() === "error" && !isForkProbe404(event)) errors.push(event.text()); });
     target.on("response", (response) => {
       if (response.url().startsWith(base) && response.status() >= 500) errors.push(`${response.status()} ${response.url()}`);
     });

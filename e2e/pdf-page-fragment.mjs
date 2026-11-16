@@ -9,6 +9,7 @@
 // Note: the full Chromium build is required. The Chromium headless shell has no
 // PDF viewer and downloads the file instead, so nothing renders in the iframe.
 import assert from "node:assert/strict";
+import { isForkProbe404 } from "./fork-console.mjs";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { createWriteStream, existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
@@ -176,7 +177,7 @@ try {
   page.setDefaultTimeout(30_000);
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  page.on("console", (event) => { if (event.type() === "error") errors.push(event.text()); });
+  page.on("console", (event) => { if (event.type() === "error" && !isForkProbe404(event)) errors.push(event.text()); });
 
   await page.goto(`${base}/?session=${SESSION}`, { waitUntil: "domcontentloaded" });
 

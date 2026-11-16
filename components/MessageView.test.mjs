@@ -551,8 +551,9 @@ test("renders a truncation notice for stopReason length", () => {
   });
 
   assert.match(html, /role="alert"/);
-  assert.match(html, /output limit was reached before an answer/i);
-  assert.doesNotMatch(html, /follow-up/i);
+  // Fork copy (tigerai/ui/i18n-overrides.ts) replaces the upstream wording.
+  assert.match(html, /used up this turn&#x27;s output budget before writing an answer/i);
+  assert.doesNotMatch(html, /Press Continue to let the AI finish/i);
 });
 
 test("keeps the follow-up hint when a truncated response already has text", () => {
@@ -565,7 +566,7 @@ test("keeps the follow-up hint when a truncated response already has text", () =
   });
 
   assert.match(html, /Partial answer/);
-  assert.match(html, /follow-up/i);
+  assert.match(html, /Press Continue to let the AI finish/i);
   assert.doesNotMatch(html, /Compact context/);
 });
 
@@ -860,9 +861,9 @@ test("uses the unanswered truncation notice for an empty length reply", () => {
     stopReason: "length",
   });
 
-  assert.match(html, /output limit was reached before an answer/i);
-  assert.match(html, /nearly full context/i);
-  assert.doesNotMatch(html, /follow-up/i);
+  assert.match(html, /used up this turn&#x27;s output budget before writing an answer/i);
+  assert.match(html, /Press Continue to try again/i);
+  assert.doesNotMatch(html, /Press Continue to let the AI finish/i);
 });
 
 function textOf(html) {
