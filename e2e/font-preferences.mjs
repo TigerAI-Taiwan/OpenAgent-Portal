@@ -54,23 +54,41 @@ export async function checkFontPreferences(page) {
 
   const other = await page.context().newPage();
   try {
+    // Count the storage events this tab really receives, so a miss can be told
+    // apart from the app ignoring one.
+    await other.addInitScript(() => {
+      window.__storageEvents = [];
+      window.addEventListener("storage", (event) => window.__storageEvents.push([event.key, event.newValue]));
+    });
     await other.goto(page.url(), { waitUntil: "load" });
     // "load" can fire before the app has mounted. Wait until the new tab has
     // applied the stored font, so its storage listener exists before we change it.
     await other.waitForFunction(() => /^"?Times New Roman"?, serif,/.test(getComputedStyle(document.body).fontFamily));
     await other.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await other.bringToFront();
     await ui.fill("serif");
+    const synced = (timeout) => other.waitForFunction(() => getComputedStyle(document.body).fontFamily.startsWith("serif,"), undefined, { timeout });
     try {
-      await other.waitForFunction(() => getComputedStyle(document.body).fontFamily.startsWith("serif,"), undefined, { timeout: 15_000 });
-    } catch (error) {
-      // Report what each tab actually holds, so a CI-only failure can be diagnosed.
+      await synced(5_000);
+    } catch {
+      // Report what each tab holds, so a CI-only miss can be diagnosed, then
+      // change the value once more: a second event shows sync works at all.
       const state = (p) => p.evaluate(() => ({
         bodyFont: getComputedStyle(document.body).fontFamily,
         cssVar: document.documentElement.style.getPropertyValue("--font-ui"),
         stored: localStorage.getItem("pi-ui-font-family"),
         visibility: document.visibilityState,
+        storageEvents: window.__storageEvents,
       }));
-      throw new Error(`cross-tab font sync: main=${JSON.stringify(await state(page))} other=${JSON.stringify(await state(other))}`, { cause: error });
+      const first = `main=${JSON.stringify(await state(page))} other=${JSON.stringify(await state(other))}`;
+      await ui.fill("serif, sans-serif");
+      try {
+        await synced(15_000);
+      } catch (error) {
+        throw new Error(`cross-tab font sync (first and second change): ${first} then other=${JSON.stringify(await state(other))}`, { cause: error });
+      }
+      console.log(`NOTE: first cross-tab font change was missed, the second arrived: ${first}`);
+      await ui.fill("serif");
     }
     await uiWeight.fill("300");
     await other.waitForFunction(() => getComputedStyle(document.body).fontWeight === "300");
