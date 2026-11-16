@@ -95,7 +95,7 @@ The consultant thought for a moment. "Chairman, your company's brain today is ea
 | **Workflows** | Hands work that must be done on a fixed schedule to n8n, to run on time with the same steps | Chapter 6 delivery-date reminders |
 | **Audit** | Records who viewed what, who changed what, and who approved what | Every chapter; version history is reinforced by the consulting package's Gitea |
 
-"One more thing," the consultant added. "The brain belongs to the company, not to the AI. The data normally stays on the company's own machines, and the company decides who can see what. AI only writes drafts and only does what it is permitted to do. **The one who decides is always a person.**"
+"One more thing," the consultant added. "The brain belongs to the company, not to the AI. The data normally stays on the company's own machines, and the company decides who can see what. AI drafts, looks things up and uses tools, but only does what it is permitted to do; confirming, approving and going live are decided by people. **The one who decides is always a person.**"
 
 David asked just one question: "So what is the first step?"
 

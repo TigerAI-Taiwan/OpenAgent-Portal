@@ -1,134 +1,119 @@
 <p align="center"><img src="public/brand/tigerai-logo.png" alt="TigerAI" width="140"></p>
 
-# OpenAgent Portal (based on pi-agent and pi-web)
+# OpenAgent Portal: AI your colleagues can actually use, so the team gets things done together.
 
-**A self-hosted AI agent portal for teams, in companies and in schools.** Channels, task assignments, skills and n8n, all running on your own machine.
+Colleagues don't need to learn AI first: they leave their work in plain words. The team hands information over in shared channels, AI helps organize, check and carry out the work, and the person responsible confirms the result.
+
+**One person using AI makes one person more capable. A team using AI through channels keeps that capability in the company.**
+
+Self-hosted on your own machine, based on pi-agent and pi-web.
 
 [繁體中文](README.md) · Community Edition 1.1.x-ce · no user limit
 
 ---
 
-## Why
+## TEAM AI in a channel
 
-Personal AI agent tools serve one person at a time. Teams need something else:
+![Project channel "Project: New Product Introduction": colleagues each write where they are stuck, @AI lists who is waiting for whom, and Mandy uploads drawing v3](docs/images/team-ai-channel.png)
 
-- **Shared channels and records**: what was said, what was decided and who promised what is kept and can be followed up.
-- **Governance**: accounts and administrators, an audit log, and a review before a workflow is published for others.
-- **Local models with a backup**: your own model day to day, a backup only when the main connection is down.
+The project channel 「專案：新品導入」 ("Project: New Product Introduction"). Colleagues each wrote what they are stuck on. Someone asked `@AI` "Where is this order stuck right now? Who is each person waiting for?", and the AI, working from what each person said in the channel, lists who is waiting for whom and whose hands the first step is in. Then the next colleague takes over: Mandy uploads revision 3 of the drawing to the channel and asks production control and engineering to pick it up.
+*(Screenshot from a demo machine; the company and the people are fictional. The interface shown is in Chinese.)*
 
-OpenAgent Portal adds these on top of pi-agent / pi-web. The AI only writes drafts and suggestions; confirming, adopting, completing and approving are done by people.
+When colleagues each use AI on their own, the information is scattered across everyone's private chats and nobody else can pick it up. When the team uses AI in a shared channel, what was said, what was decided and who is waiting for whom are visible to everyone, and the work can be handed over.
 
-## Start with a story
+## Three steps
 
-Two fictional stories, each walking through the whole product (the story files are in [`docs/stories/`](docs/stories/)):
+1. **Colleagues leave their work**: in plain words in a channel, what they did and where they are stuck. No need to learn AI first.
+2. **The Agent helps**: `@AI` organizes and checks, and uses tools to do the work: filling in forms as PDFs, researching the web, building and testing n8n workflows, making report slide decks.
+3. **The team confirms and takes over**: confirming, adopting, completing, approving and publishing are decided by people; the next colleague picks up from the channel.
 
-- **[Taiwan Tech Precision: Three Months to Follow One Order All the Way Through](docs/stories/SME_Story_v1.0_en.md)** ([繁體中文](docs/stories/中小企業主_故事_v1.0.md))
-  Employees first leave a record of their work in their own words; the company turns the records, step by step, into work that can be handed over and tracked. From company-wide, department and project channels it grows into a **Company Brain**.
-- **[Learning AI Agents: Professor Wang's Semester](docs/stories/School_Story_v1.0_en.md)** ([繁體中文](docs/stories/學校課程_故事_v1.0.md))
-  Students learn not "how to ask AI" but how to read the details and get AI to do the job right: from writing prompts to building skills and n8n workflows.
+## Where to start
+
+| You are | Start here |
+|---|---|
+| **An SME owner or adoption consultant** | **[SME adoption: Taiwan Tech Precision, three months to follow one order all the way through](docs/stories/SME_Story_v1.0_en.md)** ([繁體中文](docs/stories/中小企業主_故事_v1.0.md))<br>Employees first leave their work in their own words; company-wide, department and project channels turn it step by step into work that can be handed over and tracked, growing into a Company Brain. |
+| **A teacher** | **[Teacher Workshop: Four Exercises](docs/stories/Teacher_Workshop_Four_Exercises_v1.0_en.md)** ([繁體中文](docs/stories/教師工作坊_四個練習_v1.0.md))<br>A bear on a bicycle (prompts and details), a library card (an Agent uses tools and checks its work), an n8n financial report (Agent and workflow), group research (a team doing research with AI in a channel). |
 
 The companies, schools, people and numbers in the stories are fictional.
 
-## Community Edition features
+## Four main capabilities
 
-| Area | Features |
+- **Team channels**: company-wide, department and project channels where colleagues hand information over and can `@AI` at any time. Wizards look across a channel for you: a daily digest, a weekly work report and meeting summaries (upload a recording or paste a transcript; recordings need a separate speech-to-text service), with a source on every item.
+- **Task tracking**: assign work to a person or to the AI; when it is done, the person responsible confirms it. A bulletin board and a bell remind people of what they owe.
+- **Shared skills**: built-in skills fill in forms as PDFs, research the web, make report slide decks and help with n8n workflows; work the team does often can become a skill everyone calls. A skill never grants extra permissions.
+- **Tools and workflows (n8n)**: the Portal and n8n call each other (webhooks), and the n8n MCP is connected. Anyone can build and test their own flows; only publishing a flow for others needs administrator review.
+
+Also included: local models with a backup, personal keys, passphrase self-registration, user records and an audit log. The full feature list and the edition differences are in [EDITIONS.md](EDITIONS.md) (in Chinese).
+
+## Do it yourself, or bring in a consultant
+
+The Community Edition is free to self-host, and everything it does is in this repo.
+
+> Everything in the Community Edition you can do yourselves. If you want to save time, avoid detours, or have someone accountable for delivery and handover, come to our consulting service.
+
+| Option | What it is |
 |---|---|
-| Daily work | Chat (images, .md/.txt attachments); channels (company-wide / department / project, with @AI); task assignments (to a person or to the AI, a person confirms when done); bulletin board and bell; prompts (your own, `#` to call, shareable) |
-| Skills | Built-in skills (with their tools): fill in an application form, research the web, make a report slide deck, n8n workflow helper; "copy as mine" or write your own. A skill never grants extra permissions |
-| Wizards (summaries and analysis) | Daily digest, weekly work report and message analysis, each looking at work from five angles (record, supervise, audit, remind, suggest) with a source on every item; plus skill suggestions and meeting summaries (upload a recording or paste a transcript; needs a separate speech-to-text service) |
-| Web and documents | Web research (SearXNG; only the search keywords are sent); report slide decks and filled-in PDF forms (Gotenberg conversion) |
-| n8n | Simple webhooks (Portal calls n8n, n8n calls Portal) and the **n8n MCP**. The Community Edition opens only the n8n MCP, as an MCP demo. Anyone can build and test their own flows; only publishing a flow for others needs administrator review |
-| Models | Several connections in priority order; local model plus backup; personal keys per user (including a free NVIDIA option), with personal and shared connections backing each other up |
-| Accounts and admin | Self-registration with a passphrase and approval; organization `org.xlsx` import; user records (last seen, time spent, CSV export); audit log; idle auto-logout |
+| Do it yourselves | Follow the manual to set up departments, data and approval habits, and connect existing systems with n8n |
+| Teach us | Workshops and hands-on coaching |
+| Do it for us | Consulting package: assessment, configuration, testing, training, handover |
 
-More (MCP hub, MCP for other systems, Gitea archiving, operating-flywheel and workflow templates, API Proxy) belongs to the consulting package or the custom commercial edition; see [EDITIONS.md](EDITIONS.md).
+The three editions and the suggested adoption path are in [EDITIONS.md](EDITIONS.md).
 
-## Quick start (Docker)
+## Quick install (Docker)
 
-**You need** a machine that runs Docker (with `docker compose`). Image:
+You need a machine that runs Docker (with `docker compose`). Image `ghcr.io/tigerai-taiwan/openagent-portal:1.1.2-ce`, default port **30161**.
 
-```
-ghcr.io/tigerai-taiwan/openagent-portal:1.1.2-ce
-```
+1. Get this repo (`compose.yaml` and `.env.example` are in it), copy `.env.example` to `.env`, and fill in at least these three lines:
 
-> Default port: **30161**. To build the image yourself from source: `docker compose up -d --build` (same tag).
+   ```env
+   TIGERAI_ADMIN_EMAIL=you@example.com
+   TIGERAI_ADMIN_PASSWORD=<a long password>
+   TZ=Asia/Taipei
+   ```
 
-The Portal and the other three services are **four separate containers**. The Portal admin page only takes a URL and a test button. The Portal is required; SearXNG (web research), Gotenberg (slide/PDF conversion) and n8n (workflows) are optional and switched on by compose profiles.
+2. Start it and open <http://127.0.0.1:30161>:
 
-`.env` (copy `.env.example` and fill in; **never commit it**). These three lines are the minimum, everything else has a default:
+   ```
+   docker compose up -d
+   ```
 
-```env
-TIGERAI_ADMIN_EMAIL=you@example.com
-TIGERAI_ADMIN_PASSWORD=<a long password>
-TZ=Asia/Taipei
-```
+3. Sign in with the administrator from `.env`. **You must change the password at first sign-in.**
+4. **Settings -> Model connection**: enter an OpenAI-compatible `/v1` URL and key and press Test. With no local model, a free NVIDIA model works directly; with a local model, add NVIDIA as the backup.
+5. Switch on optional services when you need them: `docker compose --profile search --profile convert --profile n8n up -d` (web research / slide and PDF conversion / n8n).
 
-Add these only for the optional services (next section): `COMPOSE_PROFILES=search,convert,n8n`, `SEARXNG_SECRET=<random string>`, `N8N_ENCRYPTION_KEY=<random string>`. To allow LAN access set `PI_WEB_BIND=0.0.0.0` and list the host names people type in the browser in `PI_WEB_ALLOWED_HOSTS` (comma separated). Port: `PI_WEB_PORT` (default 30161).
-
-`compose.yaml` (ships in the repo; excerpt; the service is called `pi-web`):
-
-```yaml
-services:
-  pi-web:
-    image: ghcr.io/tigerai-taiwan/openagent-portal:${OAP_IMAGE_TAG:-1.1.2-ce}
-    restart: unless-stopped
-    environment:
-      PORT: "30161"
-      TIGERAI_ENABLED: "1"
-      TIGERAI_ADMIN_EMAIL: ${TIGERAI_ADMIN_EMAIL:-adm@local}
-      TIGERAI_ADMIN_PASSWORD: ${TIGERAI_ADMIN_PASSWORD:-}
-      TZ: ${TZ:-Asia/Taipei}
-    ports: ["${PI_WEB_BIND:-127.0.0.1}:${PI_WEB_PORT:-30161}:30161"]
-    volumes: [pi-agent-data:/home/node/.pi/agent, pi-cwd-data:/home/node/pi-cwd]
-
-  # optional services, off by default (compose profiles): searxng (search), gotenberg (convert), n8n (n8n)
-  searxng:   { profiles: [search],  image: "searxng/searxng:2026.9.5-c7f3080aa" }   # internal only; needs docs/searxng-settings.yml (included)
-  gotenberg: { profiles: [convert], image: "gotenberg/gotenberg:8.21.1" }          # internal only
-  n8n:       { profiles: [n8n],     image: "docker.n8n.io/n8nio/n8n:2.44.6" }      # editor bound to this machine, 127.0.0.1:5678
-```
-
-The optional services are **not** started by a plain `docker compose up -d`; switch on the ones you want:
-
-```
-docker compose --profile search --profile convert --profile n8n up -d
-```
-
-Then:
-
-1. `docker compose up -d` (add `--profile …` for the optional services) and open <http://127.0.0.1:30161>.
-2. Sign in with the administrator from `.env`. **You must change the password at first sign-in** before you can continue.
-3. **Settings -> Model connection**: enter your model service (OpenAI-compatible `/v1` URL and key) and press Test. With no local model you can use a free NVIDIA model directly; with a local model, add NVIDIA as the **backup** (used only when the local model is down; the screen says so, and it can be turned off). Without a model, chat and the wizards do not answer.
-4. **Settings -> Admin**: enter and test the SearXNG (`http://searxng:8080`), Gotenberg (`http://gotenberg:3000`) and n8n (`http://n8n:5678`) URLs; create units and members, or turn on passphrase self-registration.
-
-The **speech-to-text service for meeting summaries is separate** (an OpenAI-compatible transcription endpoint); the Portal does not include one. All data lives in Docker volumes; a backup is a copy of the volumes.
+The full guide (`compose.yaml` excerpt, environment variables, LAN access, speech-to-text, backups) is in **[docs/INSTALL.en.md](docs/INSTALL.en.md)** ([繁體中文](docs/INSTALL.md)).
 
 ## Data and privacy
 
-Normally all data stays on your machine. Only if you have configured a backup (for example NVIDIA) or a member added a personal key, and the local model fails or that member chooses it, are conversations sent to the model provider you chose; the screen shows it. Web search sends only the search keywords. **Administrators can read members' conversations** (read-only, every view is audited), and the members' settings page always says so.
+**Local first**: your data lives on your own machine (Docker volumes). Data leaves it only in these cases:
+
+- **Backup model**: if you configured a backup (for example NVIDIA), conversations go to it only when the local model fails. The screen says so, and it can be turned off.
+- **Personal keys**: when a member adds their own key and chooses it, that conversation goes to the model provider they chose.
+- **Web research**: only the search keywords are sent.
+
+**Administrators can read members' conversations** (read-only, every view is audited), and the members' settings page always says so.
 
 ## Editions
 
 | | Community (this repo) | Consulting package | Custom commercial |
 |---|---|---|---|
-| What | Everything above, **no user limit** | A consultant connects your workflows and systems | Per-person permissions, core-system integration |
+| What | Everything above, **no user limit** (actual capacity depends on hardware and models) | A consultant connects your workflows and systems | Per-person permissions, core-system integration |
 | How to get it | Install it yourself | From a consultant licensed by TigerAI | Talk to TigerAI |
 
-> Everything in the Community Edition you can do yourselves. If you want to save time, avoid detours, or have someone accountable for delivery and handover, come to our consulting service.
+## License
 
-## Manuals
+- Built on [pi-web](https://github.com/agegr/pi-web) (by agegr, MIT) and [pi-agent / pi](https://github.com/earendil-works/pi) (by earendil-works, MIT); license notices are in [NOTICE](NOTICE). This project is **not** an official upstream release.
+- The `tigerai/` directory has its own license: the [TigerAI Sustainable Use License](tigerai/LICENSE) (**currently a draft, pending legal review**).
+- The logo is a TigerAI trademark and is not covered by the code license (see [tigerai/TRADEMARK.md](tigerai/TRADEMARK.md)).
 
-Teacher's manual and SME adoption manual: **PDF manuals and class slides are available from TigerAI on request.**
-
-## Credits and license
-
-- Upstream: [pi-web](https://github.com/agegr/pi-web) (by agegr, MIT) and [pi-agent / pi](https://github.com/earendil-works/pi) (by earendil-works, MIT). License notices are in [NOTICE](NOTICE). This project is **not** an official upstream release.
-- The `tigerai/` directory is under the TigerAI Sustainable Use License (**draft, pending legal review**). The logo is a TigerAI trademark and is not covered by the code license.
+## Contact
 
 By Morris Lu (盧業興) · n8n Taipei Ambassador · TigerAI (虎智科技), an n8n Expert Partner.
-For usage questions, contact TigerAI (tiger.ai.tw@gmail.com).
+
+Usage questions, consulting, the teacher's manual and SME adoption manual (PDF), class slides: **morrislu@tigerai.tw**
 
 ---
 
 ## Upstream pi-web quick start (without the TigerAI layer)
 
-Without `TIGERAI_ENABLED`, this project behaves like upstream pi-web. For the upstream npx quick start, configuration, remote access and development notes, see [docs/UPSTREAM_README.md](docs/UPSTREAM_README.md) (the current README sections from "上游 pi-web 的快速開始" onward, moved there).
+Without `TIGERAI_ENABLED`, this project behaves like upstream pi-web. For the upstream npx quick start, configuration, remote access and development notes, see [docs/UPSTREAM_README.md](docs/UPSTREAM_README.md).

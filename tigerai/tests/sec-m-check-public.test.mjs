@@ -69,7 +69,7 @@ test("history mode finds a secret that one commit added and the next removed", (
 
 test("1.1.2-ce: the fictional story companies are allowed by file (README and the story files) and nowhere else; a real-looking secret in a story file is still red", () => {
   const demo = j("虎虎", "生風精密");
-  for (const f of ["README.md", "README.en.md", "docs/stories/中小企業主_故事_v1.0.md", "docs/stories/SME_Story_v1.0_en.md", "docs/stories/學校課程_故事_v1.0.md", "docs/stories/School_Story_v1.0_en.md"])
+  for (const f of ["README.md", "README.en.md", "docs/stories/中小企業主_故事_v1.0.md", "docs/stories/SME_Story_v1.0_en.md", "docs/stories/教師工作坊_四個練習_v1.0.md", "docs/stories/Teacher_Workshop_Four_Exercises_v1.0_en.md"])
     assert.deepEqual(scanLine(f, `${demo}: a fictional company`), [], f);
   assert.deepEqual(scanLine("docs/other.md", `${demo}: a fictional company`), ["customer or demo company name"], "a new file never inherits the exemption");
   assert.deepEqual(scanLine("tigerai/pages/i18n.ts", `${demo}`), ["customer or demo company name"]);

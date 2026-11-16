@@ -69,7 +69,7 @@
 
 分界一句話:**社群版有簡易的 n8n Webhook 示範**(管理員登記 webhook 應用、AI 在對話/頻道呼叫它、n8n 用金鑰呼叫 `/api/tigerai/hooks/agent`、hook 金鑰管理),另有 **n8n 的 MCP 連線**(示範,Founder 決定);但**沒有其他系統的 MCP、沒有 Gitea、沒有 n8n 排程**;這些與 n8n/Gitea 的 docker 安裝與接上都是顧問包的事。
 
-> 社群版只開放 n8n 的 MCP，當作 MCP 示範；其他系統的 MCP 請洽顧問或虎智科技（tiger.ai.tw@gmail.com）。
+> 社群版只開放 n8n 的 MCP，當作 MCP 示範；其他系統的 MCP 請洽顧問或虎智科技（morrislu@tigerai.tw）。
 
 ## 6. 顧問版映像怎麼建
 

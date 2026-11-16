@@ -15,7 +15,7 @@
 | MCP:n8n(示範) | yes | yes | yes |
 | API Proxy(依個人權限) | no | no | yes |
 
-**這個 repo 是社群版**:單純的本地版 Agent Portal,附簡易的 n8n Webhook 示範和 n8n 的 MCP 連線;沒有其他系統的 MCP、Gitea 與 n8n 排程。社群版只開放 n8n 的 MCP，當作 MCP 示範；其他系統的 MCP 請洽顧問或虎智科技（tiger.ai.tw@gmail.com）。顧問包是另外授權的加值包,不在這個 repo。完整說明、導入路徑與五個面向:[EDITIONS.md](EDITIONS.md)。
+**這個 repo 是社群版**:單純的本地版 Agent Portal,附簡易的 n8n Webhook 示範和 n8n 的 MCP 連線;沒有其他系統的 MCP、Gitea 與 n8n 排程。社群版只開放 n8n 的 MCP，當作 MCP 示範；其他系統的 MCP 請洽顧問或虎智科技（morrislu@tigerai.tw）。顧問包是另外授權的加值包,不在這個 repo。完整說明、導入路徑與五個面向:[EDITIONS.md](EDITIONS.md)。
 
 ## 1.1.0-ce 學校課程版
 
@@ -40,7 +40,7 @@
 - 每個人可在「設定 → 帳號」改自己的姓名、電子郵件(要目前密碼)與密碼;姓名不必唯一、可含空白,建議「學號-班級-姓名」(公司「工號-部門-姓名」)。
 - 閒置 30 分鐘自動登出(管理員可調整或關閉);登入與註冊的節流改成每個帳號、每個班各算;封存班級/部門;「監督」改成交辦單給當事人自己單位的主管並提醒當事人;已停用成員可永久刪除個人資料(兩步確認、稽核只留一筆);「使用者紀錄」合併停留時間與匯出 CSV(取代「到勤與使用」)。
 - 社群版**沒有人數上限**,也沒有 100 人提醒。
-- **有使用問題可以來找虎智科技(tiger.ai.tw@gmail.com)**。
+- **有使用問題可以來找虎智科技(morrislu@tigerai.tw)**。
 
 安裝時的新環境變數:`TIGERAI_ADMIN_EMAIL`(學校預設 `tiger.ai.tw@gmail.com`)、`TIGERAI_ADMIN_MUST_CHANGE=1`、`TIGERAI_VENDOR_EMAIL` / `TIGERAI_VENDOR_PASSWORD` / `TIGERAI_VENDOR_MUST_CHANGE`,以及節流 `TIGERAI_LOGIN_GLOBAL_FAILS`、`TIGERAI_REGISTER_WRONG_GLOBAL`、`TIGERAI_REGISTER_PER_HOUR`、`TIGERAI_REGISTER_GLOBAL_PER_HOUR`(全表見 [tigerai/README.md](tigerai/README.md))。
 

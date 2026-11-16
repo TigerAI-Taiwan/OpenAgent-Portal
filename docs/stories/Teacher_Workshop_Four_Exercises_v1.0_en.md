@@ -1,6 +1,8 @@
-# Learning AI Agents: Professor Wang's Semester
+# Teacher Workshop: Four Exercises
 
 (Story outline v1.0 · 2026-11-16 · Fictional school, teacher, and students)
+
+The teacher workshop walks teachers through four exercises hands-on: a bear on a bicycle, a library card, an n8n financial report, and group research. The story below follows one teacher's course to show what each exercise teaches and why they come in this order.
 
 > Students aren't here to learn "how to ask AI." They are here to learn how to read the details and get AI to do the job right.
 
@@ -150,7 +152,7 @@ She exports a CSV. The system does not assign any grades.
 
 When the term ends, she archives the course. Next semester, on the same machine, she will open a new one.
 
-> **Want the complete lecture slides? Please contact TigerAI (tiger.ai.tw@gmail.com); they are free.**
+> **Want the complete lecture slides? Please contact TigerAI (morrislu@tigerai.tw); they are free.**
 
 ---
 
