@@ -55,6 +55,10 @@ export async function checkFontPreferences(page) {
   const other = await page.context().newPage();
   try {
     await other.goto(page.url(), { waitUntil: "load" });
+    // "load" can fire before the app has mounted. Wait until the new tab has
+    // applied the stored font, so its storage listener exists before we change it.
+    await other.waitForFunction(() => /^"?Times New Roman"?, serif,/.test(getComputedStyle(document.body).fontFamily));
+    await other.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     await ui.fill("serif");
     await other.waitForFunction(() => getComputedStyle(document.body).fontFamily.startsWith("serif,"));
     await uiWeight.fill("300");
