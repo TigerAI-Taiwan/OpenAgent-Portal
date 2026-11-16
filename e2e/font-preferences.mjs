@@ -60,7 +60,18 @@ export async function checkFontPreferences(page) {
     await other.waitForFunction(() => /^"?Times New Roman"?, serif,/.test(getComputedStyle(document.body).fontFamily));
     await other.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     await ui.fill("serif");
-    await other.waitForFunction(() => getComputedStyle(document.body).fontFamily.startsWith("serif,"));
+    try {
+      await other.waitForFunction(() => getComputedStyle(document.body).fontFamily.startsWith("serif,"), undefined, { timeout: 15_000 });
+    } catch (error) {
+      // Report what each tab actually holds, so a CI-only failure can be diagnosed.
+      const state = (p) => p.evaluate(() => ({
+        bodyFont: getComputedStyle(document.body).fontFamily,
+        cssVar: document.documentElement.style.getPropertyValue("--font-ui"),
+        stored: localStorage.getItem("pi-ui-font-family"),
+        visibility: document.visibilityState,
+      }));
+      throw new Error(`cross-tab font sync: main=${JSON.stringify(await state(page))} other=${JSON.stringify(await state(other))}`, { cause: error });
+    }
     await uiWeight.fill("300");
     await other.waitForFunction(() => getComputedStyle(document.body).fontWeight === "300");
     await resetUi.click();
